@@ -45,24 +45,47 @@ connectDB(); // Call the function to establish MongoDB connection
 // Enable CORS for all routes and origins (for development).
 // For production, you might want to configure specific origins.
 // app.use(cors());
-// Configure CORS
-const allowedOrigins = [
-    'http://localhost:5173', // Your frontend local development URL
-    'http://localhost:3000', // Common for Create React App local dev
-    'https://to-let-globe-kaustubh-divekar-projects.vercel.app/',
-    'https://to-let-globe-mlwindwy0-kaustubh-divekar-projects.vercel.app/',
-    'https://to-let-globe-rho.vercel.app' // Vercel frontend URL AFTER deployment
-];
+// Configure CORS using environment variables so deployments do not require code changes.
+const normalizeOrigin = (origin = '') => origin.trim().replace(/\/$/, '');
+
+const defaultOrigins = ['http://localhost:5173', 'http://localhost:3000'];
+const configuredOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.CORS_ALLOWED_ORIGINS || '').split(','),
+]
+  .map((value) => normalizeOrigin(value || ''))
+  .filter(Boolean);
+
+const allowedOrigins = new Set([...defaultOrigins, ...configuredOrigins]);
+const allowVercelPreviewDomains = process.env.CORS_ALLOW_VERCEL_PREVIEWS === 'true';
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  const normalized = normalizeOrigin(origin);
+  if (allowedOrigins.has(normalized)) {
+    return true;
+  }
+
+  if (!allowVercelPreviewDomains) {
+    return false;
+  }
+
+  try {
+    return new URL(normalized).hostname.endsWith('.vercel.app');
+  } catch (error) {
+    return false;
+  }
+};
 
 app.use(cors({
     origin: function (origin, callback) {
         // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
+        if (isAllowedOrigin(origin)) {
+            return callback(null, true);
         }
-        return callback(null, true);
+    const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+    return callback(new Error(msg), false);
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true, // Allow cookies to be sent
@@ -71,7 +94,12 @@ app.use(cors({
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Socket origin not allowed by CORS policy.'));
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -197,6 +225,28 @@ app.get('/', (req, res) => {
   res.status(200).json({ message: 'Welcome to the Bachelor House Rent System API!' });
 });
 
+// Apply rate limiting to API routes to prevent abuse
+// You can configure different limiters for different routes if needed
+const apiLimiter = rateLimit({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+  max: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes.' },
+});
+
+// For more sensitive routes like login or password reset, stricter limits reduce brute-force attacks.
+const authLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minutes
+    max: 10, // Limit each IP to 10 auth attempts per window
+    message: { success: false, message: 'Too many authentication attempts from this IP, please try again after 10 minutes.' },
+    skipSuccessfulRequests: true, // Don't count successful auths against the limit
+});
+
+app.use('/api', apiLimiter); // Apply to all routes starting with /api
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+
 // 8. Define API Routes
 // All routes defined in authRoutes.js will be prefixed with /api/auth
 app.use('/api/auth', authRoutes);
@@ -213,30 +263,7 @@ app.use(errorHandler);
 // 10. Define the Port
 // Use the PORT environment variable if set, otherwise default to 5000.
 // process.env.PORT allows the hosting provider to set the port.
-const PORT = process.env.PORT || 5001; // Changed from PORT to BACKEND_PORT to avoid conflict with frontend
-
-// Apply rate limiting to API routes to prevent abuse
-// You can configure different limiters for different routes if needed
-const apiLimiter = rateLimit({
-  windowMs: process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000, // 15 minutes
-  max: process.env.RATE_LIMIT_MAX_REQUESTS || 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes.' },
-});
-
-app.use('/api', apiLimiter); // Apply to all routes starting with /api
-
-// For more sensitive routes like login or password reset, you might want stricter limits:
-const authLimiter = rateLimit({
-    windowMs: 10 * 60 * 1000, // 10 minutes
-    max: 10, // Limit each IP to 10 auth attempts per window
-    message: { success: false, message: 'Too many authentication attempts from this IP, please try again after 10 minutes.' },
-    skipSuccessfulRequests: true, // Don't count successful auths against the limit
-});
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/forgot-password', authLimiter);
-// app.use('/api/auth/register', authLimiter); // Also consider for registration
+const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 5001);
 
 // HTTP request logger middleware (only in development)
 if (process.env.NODE_ENV === 'development') {
