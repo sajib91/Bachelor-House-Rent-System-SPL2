@@ -1,0 +1,52 @@
+/* frontend/src/components/properties/SortFilterBar.module.css */
+.sortFilterBar {
+    display: flex;
+    justify-content: flex-end; /* Align to right, or center if filters are added */
+    align-items: center;
+    gap: calc(var(--spacing-unit) * 3);
+    margin-top: calc(var(--spacing-unit) * 4);
+    max-width: 1200px;
+    width: 90%;
+}
+
+.sortGroup {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing-unit) * 1);
+}
+
+.sortGroup label {
+    font-size: 1rem;
+    color: var(--color-text-secondary);
+}
+
+.sortSelect {
+    background-color: var(--color-input-background);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-input-border);
+    padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2);
+    border-radius: var(--border-radius-input);
+    font-size: 1rem;
+    cursor: pointer;
+    -webkit-appearance: none; /* Remove default dropdown arrow */
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23E0E0E0'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1em;
+}
+
+.sortSelect:focus {
+    outline: none;
+    border-color: var(--color-accent-cyan);
+    box-shadow: 0 0 0 2px rgba(var(--color-accent-cyan-rgb), 0.5);
+}
+
+@media (max-width: 768px) {
+    .sortFilterBar {
+        justify-content: center;
+        width: 100%;
+        margin-top: calc(var(--spacing-unit) * 2);
+    }
+}

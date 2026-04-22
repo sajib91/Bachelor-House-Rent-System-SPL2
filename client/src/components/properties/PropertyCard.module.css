@@ -1,0 +1,107 @@
+/* frontend/src/components/properties/PropertyCard.module.css */
+.propertyCard {
+    background-color: var(--color-input-background);
+    border-radius: var(--border-radius-form-inner);
+    overflow: hidden;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    text-align: left;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    border: 1px solid var(--color-input-border);
+    display: flex;
+    flex-direction: column;
+    text-decoration: none; /* Remove underline from Link */
+    color: inherit;
+    min-width: 280px; /* Minimum width for cards */
+}
+
+.propertyCard:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+}
+
+.imageContainer {
+    position: relative;
+    width: 100%;
+    height: 200px; /* Fixed height for consistency */
+    overflow: hidden;
+}
+
+.propertyImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.placeholderImage {
+    width: 100%;
+    height: 100%;
+    background-color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #bbb;
+    font-size: 1.1rem;
+}
+
+.rentedOutBadge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: var(--color-danger); /* Or a specific 'rented out' color */
+    color: white;
+    padding: 5px 10px;
+    border-radius: var(--border-radius-small);
+    font-size: 0.8rem;
+    font-weight: var(--font-weight-bold);
+    z-index: 10;
+}
+
+.info {
+    padding: calc(var(--spacing-unit) * 2);
+    flex-grow: 1; /* Allows info section to take available space */
+}
+
+.info h3 {
+    margin-bottom: var(--spacing-unit);
+    color: var(--color-accent-cyan);
+    font-size: 1.3rem;
+}
+
+.info .location {
+    font-size: 0.95rem;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-unit);
+}
+
+.info .rent {
+    font-size: 1.5rem;
+    color: var(--color-accent-gold);
+    font-weight: var(--font-weight-bold);
+    margin-bottom: calc(var(--spacing-unit) * 2);
+}
+
+.details {
+    display: flex;
+    gap: calc(var(--spacing-unit) * 1.5);
+    font-size: 0.85rem;
+    color: var(--color-text-tertiary);
+    margin-bottom: var(--spacing-unit);
+}
+
+.showMoreButton {
+    background-color: var(--color-accent-cyan);
+    color: white;
+    border: none;
+    padding: calc(var(--spacing-unit) * 1.5);
+    width: 100%;
+    text-align: center;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: var(--font-weight-bold);
+    transition: background-color 0.2s ease;
+}
+
+.showMoreButton:hover {
+    background-color: var(--color-accent-dark);
+}

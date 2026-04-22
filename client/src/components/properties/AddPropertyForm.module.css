@@ -1,0 +1,207 @@
+/* frontend/src/components/properties/AddPropertyForm.module.css */
+.addPropertyForm {
+    background-color: var(--color-form-background-outer);
+    padding: calc(var(--spacing-unit) * 4);
+    border-radius: var(--border-radius-form-outer);
+    box-shadow: 0 0 15px rgba(0,0,0,0.3);
+    max-width: 800px;
+    width: 95%;
+    margin: 0 auto; /* Center the form */
+}
+
+.formSectionTitle {
+    font-size: 1.8rem;
+    color: var(--color-accent-gold);
+    margin-top: calc(var(--spacing-unit) * 4);
+    margin-bottom: calc(var(--spacing-unit) * 2);
+    text-align: center;
+    padding-bottom: var(--spacing-unit);
+    border-bottom: 1px solid var(--color-input-border);
+}
+
+.formGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: calc(var(--spacing-unit) * 3);
+    margin-bottom: calc(var(--spacing-unit) * 3);
+}
+
+.formGroup {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: calc(var(--spacing-unit) * 1);
+}
+
+.formGroup label {
+    margin-bottom: calc(var(--spacing-unit) * 0.5);
+    font-size: 0.95rem;
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+}
+
+.requiredIndicator {
+    color: var(--color-error); /* Use the error color for required fields */
+    margin-left: 5px;
+    font-weight: var(--font-weight-bold);
+    font-size: 1.1em;
+}
+
+.formGroup input[type="text"],
+.formGroup input[type="number"],
+.formGroup select,
+.formGroup textarea {
+    background-color: var(--color-input-background);
+    border: 1px solid var(--color-input-border);
+    padding: calc(var(--spacing-unit) * 1.5);
+    border-radius: var(--border-radius-input);
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box; /* Include padding in width */
+    transition: border-color 0.2s ease-in-out; /* Smooth transition for border */
+}
+
+.formGroup input[type="file"] {
+    padding: calc(var(--spacing-unit) * 1);
+    background-color: var(--color-input-background);
+    border: 1px solid var(--color-input-border);
+    border-radius: var(--border-radius-input);
+    color: var(--color-text-primary);
+    font-size: 0.9rem;
+    cursor: pointer; /* Indicate it's clickable */
+    transition: border-color 0.2s ease-in-out;
+}
+
+/* Specific styling for file input button if needed (browser specific) */
+.formGroup input[type="file"]::file-selector-button {
+    background-color: var(--color-button-primary-bg);
+    color: var(--color-button-primary-text);
+    border: none;
+    padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2);
+    border-radius: var(--border-radius-small);
+    cursor: pointer;
+    margin-right: calc(var(--spacing-unit) * 2);
+    transition: background-color 0.2s ease;
+}
+
+.formGroup input[type="file"]::file-selector-button:hover {
+    background-color: var(--color-button-primary-hover-bg);
+}
+
+.formGroup textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.formGroup select {
+    appearance: none; /* Remove default arrow */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23E0E0E0'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1em;
+}
+
+.checkboxGroup {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing-unit) * 1);
+    margin-bottom: calc(var(--spacing-unit) * 1);
+}
+
+.checkboxGroup input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--color-accent-cyan); /* Style the checkbox */
+}
+
+.checkboxGroup label {
+    margin-bottom: 0; /* Override default margin */
+    font-size: 1rem;
+}
+
+.checkboxGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: calc(var(--spacing-unit) * 1.5);
+    background-color: var(--color-input-background);
+    padding: calc(var(--spacing-unit) * 2);
+    border-radius: var(--border-radius-input);
+    border: 1px solid var(--color-input-border);
+}
+
+.checkboxItem {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing-unit) * 0.5);
+}
+
+.errorText {
+    color: var(--color-error);
+    font-size: 0.85rem;
+    margin-top: 5px;
+}
+
+.inputError {
+    border-color: var(--color-error) !important; /* Use !important to ensure override */
+}
+
+.submitButton {
+    width: 100%;
+    margin-top: calc(var(--spacing-unit) * 4);
+    padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 3);
+    font-size: 1.1rem;
+}
+
+.uploadingMessage {
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    margin-top: 5px;
+}
+
+.thumbnailPreview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--spacing-unit) * 1);
+    margin-top: calc(var(--spacing-unit) * 1.5);
+    background-color: var(--color-background-dark);
+    padding: calc(var(--spacing-unit) * 1.5);
+    border-radius: var(--border-radius-input);
+    border: 1px dashed var(--color-input-border);
+    min-height: 120px; /* Ensure it has some height even with no images */
+    align-items: center; /* Center items vertically */
+    justify-content: center; /* Center items horizontally */
+    text-align: center;
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+.thumbnailPreview:empty::before {
+    content: 'No images uploaded yet.'; /* Placeholder text when no images */
+}
+
+.thumbnail {
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
+    border-radius: var(--border-radius-small);
+    border: 1px solid var(--color-input-border);
+}
+
+
+/* Responsive adjustments for AddPropertyForm */
+@media (max-width: 768px) {
+    .addPropertyForm {
+        padding: calc(var(--spacing-unit) * 2);
+    }
+    .formSectionTitle {
+        font-size: 1.5rem;
+    }
+    .formGrid {
+        grid-template-columns: 1fr; /* Stack inputs vertically */
+        gap: calc(var(--spacing-unit) * 2);
+    }
+    .checkboxGrid {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* More compact checkbox grid */
+    }
+}

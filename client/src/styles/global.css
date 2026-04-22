@@ -1,0 +1,128 @@
+/* src/styles/global.css */
+@import url('./theme.css');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: var(--font-size-base);
+  scroll-behavior: smooth;
+  overflow-y: scroll;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-family-main);
+  background:
+    radial-gradient(circle at top left, rgba(255, 209, 102, 0.14), transparent 28%),
+    radial-gradient(circle at top right, rgba(72, 202, 228, 0.12), transparent 24%),
+    linear-gradient(180deg, #07111b 0%, #091521 45%, #060b12 100%);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  height: 100%;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--color-text-link);
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+
+a:hover {
+  color: var(--color-text-link-hover);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+p {
+  word-wrap: break-word; /* For older browsers */
+  overflow-wrap: break-word; /* Modern property */
+}
+
+button {
+  font-family: var(--font-family-main);
+  cursor: pointer;
+}
+
+input, select, textarea {
+  font-family: var(--font-family-main);
+}
+
+/* Global container utility (optional) */
+.container {
+  width: 90%;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* --- Global Main Heading Style --- */
+.main-heading {
+    text-align: center;
+  margin-bottom: 40px;
+    font-size: 2.8rem;
+    color: var(--color-text-primary);
+    position: relative;
+}
+
+.main-heading::after {
+    content: '';
+    display: block;
+    width: 80px;
+    height: 3px;
+    background: var(--gradient-border);
+    margin: 15px auto 0;
+    border-radius: 2px;
+}
+
+/* Subheading  */
+.subheading {
+    font-size: 1.2rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 40px;
+    text-align: center;
+}
+
+/* React Toastify dark theme adjustments */
+.Toastify__toast-container {
+  margin-top: 20px; 
+}
+.Toastify__toast {
+  background-color: #102131;
+  color: var(--color-text-primary);
+  border-radius: calc(var(--spacing-unit) / 2);
+  font-family: var(--font-family-main);
+}
+.Toastify__toast--success {
+  background-color: var(--color-success) !important;
+  opacity: 0.95;
+}
+.Toastify__toast--error {
+  background-color: var(--color-error) !important;
+  opacity: 0.95;
+}
+.Toastify__close-button {
+  color: var(--color-text-primary);
+  opacity: 0.7;
+}
+.Toastify__close-button:hover {
+  opacity: 1;
+}
+.Toastify__progress-bar {
+  background: var(--color-accent-gold);
+}

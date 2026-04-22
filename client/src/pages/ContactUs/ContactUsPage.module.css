@@ -1,0 +1,85 @@
+/* frontend/src/pages/ContactUsPage.module.css */
+
+/*
+   This file is intentionally lean.
+   Most common form aesthetics (inputField, selectField, submitButton,
+   authFormContainerWithGradientBorder, authForm, title)
+   are handled by InputField component, global CSS variables,
+   or by importing classes from AuthPages.module.css in ContactUsPage.jsx.
+
+   This module contains styles unique to the ContactUsPage that are
+   not covered by shared components or global/auth styles.
+*/
+
+/* .container should be mostly empty or contain only unique page-level styling if needed */
+/* .container { */
+    /* If AuthLayout already provides a full-height container, this might not be needed */
+    /* If you still need a wrapper inside AuthLayout, keep minimal styles here */
+    /* Example: */
+    /* padding: 20px; */
+    /* text-align: center; */
+/* } */
+
+/* --- Main Page Container (similar to blog-listing-container) --- */
+.contact-us-container {
+    padding: 40px 20px; /* Consistent padding with other pages */
+    max-width: 1200px; /* Wider layout */
+    margin: 0 auto; /* Center the container on the page */
+    color: var(--color-text-primary);
+}
+
+/* --- Form Wrapper (replaces authFormContainerWithGradientBorder & authForm for outer structure) --- */
+.contact-form-wrapper {
+    /* Mimics the gradient border and background of AuthPages forms */
+    background-color: var(--color-form-background-outer); /* Outer background */
+    padding: 30px; /* Inner padding for content */
+    border-radius: var(--border-radius-form-outer); /* Outer border radius */
+    box-shadow: var(--shadow-medium); /* Consistent shadow */
+    position: relative; /* For gradient border pseudo-element */
+    overflow: hidden; /* Ensures content stays within rounded corners */
+    max-width: 700px; /* A good max-width for the form itself */
+    margin: 0 auto; /* Center the form wrapper within the wider page container */
+
+    /* Gradient border effect */
+    border: 1px solid transparent; /* Hide actual border */
+    background-image: linear-gradient(var(--color-form-background-outer), var(--color-form-background-outer)), var(--gradient-border);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    background-size: cover; /* Cover the area for gradient */
+    z-index: 1; /* Ensure it's above other elements if needed */
+    display: flex; /* Make it a flex container for the form inside */
+    flex-direction: column;
+    gap: 20px; /* Spacing between form groups, similar to authForm */
+}
+
+/* Privacy Statement */
+.privacyStatement {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    margin-top: 30px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+/* --- Responsive Adjustments --- */
+@media (max-width: 768px) {
+    .contact-us-container {
+        padding: 25px 15px; /* Adjust padding for smaller screens */
+    }
+
+    .contact-form-wrapper {
+        padding: 20px; /* Smaller padding for form on mobile */
+        max-width: 100%; /* Allow form to take full width of container */
+    }
+
+    .privacyStatement {
+        font-size: 0.8rem;
+        margin-top: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .contact-form-wrapper {
+        padding: 15px;
+    }
+}

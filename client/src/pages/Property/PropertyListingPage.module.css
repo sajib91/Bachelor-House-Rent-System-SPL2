@@ -1,0 +1,33 @@
+/* frontend/src/pages/PropertyListingPage.module.css */
+.propertyListingPage {
+    padding: 40px 20px; /* Adjust padding as needed */
+    text-align: center;
+    color: var(--color-text-primary);
+    background-color: var(--color-background-dark);
+    min-height: calc(100vh - var(--navbar-height)); /* Ensure it takes up space */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.propertiesGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: calc(var(--spacing-unit) * 3);
+    margin-top: calc(var(--spacing-unit) * 4);
+    max-width: 1200px;
+    width: 90%;
+    justify-content: center;
+}
+
+.loading, .error, .noProperties {
+    font-size: 1.2rem;
+    margin-top: 50px;
+}
+
+@media (max-width: 768px) {
+    .propertiesGrid {
+        grid-template-columns: 1fr;
+        width: 85%;
+    }
+}

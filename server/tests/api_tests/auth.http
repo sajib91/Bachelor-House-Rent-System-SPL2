@@ -1,0 +1,64 @@
+# backend/auth.http
+
+### Register a new user (Success Case)
+POST http://localhost:5001/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "testuser_unique",
+  "email": "testuser_unique@example.com",
+  "password": "Password123!",
+  "role": "Buyer",
+  "firstName": "Test",
+  "lastName": "User"
+}
+
+### Register same user again (Expect Email/Username exists error)
+POST http://localhost:5001/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "testuser_unique",
+  "email": "testuser_unique@example.com",
+  "password": "Password123!",
+  "role": "Buyer"
+}
+
+### Register with invalid data (Expect Validation Error)
+POST http://localhost:5001/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "tu", # Too short
+  "email": "invalidemail",
+  "password": "short",
+  "role": "InvalidRole"
+}
+
+### Login User (Success Case - use credentials from successful registration)
+# @name loginSuccess
+POST http://localhost:5001/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser_unique@example.com",
+  "password": "Password123!"
+}
+
+### Login User (Wrong Password)
+POST http://localhost:5001/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser_unique@example.com",
+  "password": "WrongPassword123!"
+}
+
+### Login User (Non-existent email)
+POST http://localhost:5001/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "nosuchuser@example.com",
+  "password": "Password123!"
+}

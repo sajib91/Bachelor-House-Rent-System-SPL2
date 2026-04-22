@@ -1,0 +1,324 @@
+/* src/pages/HomePage.module.css */
+.homeContainer {
+  text-align: center;
+}
+
+.section {
+  /* Calculate height relative to the viewport, subtracting the navbar height. */
+  /* This ensures the content of *each section* is visible without an inner scrollbar. */
+  min-height: calc(100vh - var(--navbar-height)); /* Each section takes full viewport height minus navbar */
+  /* height: calc(100vh - var(--navbar-height)); Use height to ensure full fill for snapping */
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* Vertically center content within each section */
+  align-items: center; /* Horizontally center content within each section */
+  padding: 20px; /* Add some general padding */
+  scroll-snap-align: start; /* Snap to the start of each section */
+  box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+
+.heroSection {
+  /* Inherits from .section */
+  background-color: var(--color-background-dark); /* Dark background for hero */
+  /* background-image: url('/path/to/your/hero-background.png'); Replace with actual path */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative; /* Needed for any absolute positioning of elements like the house graphic */
+  /* You will add specific styles for the "To-Let Globe" graphic here later */
+}
+
+.heroTitle {
+  font-size: 3.5rem;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-unit);
+  font-weight: var(--font-weight-bold);
+}
+
+.heroSubtitle {
+  font-size: 1.5rem;
+  color: var(--color-text-secondary);
+  margin-bottom: calc(var(--spacing-unit) * 4);
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.authActions, .loggedInActions {
+  display: flex;
+  justify-content: center;
+  gap: calc(var(--spacing-unit) * 2);
+  align-items: center;
+  margin-top: 30px; /* Add margin to separate from subtitle */
+}
+.loggedInActions p {
+  margin-bottom: var(--spacing-unit);
+}
+.loggedInActions {
+  flex-direction: column;
+}
+
+.heroButton {
+  /* Base styles inherited from Button.module.css's .secondary variant */
+  /* No need to override here unless you want different size than default secondary */
+  padding: calc(var(--spacing-unit) * 1.25) calc(var(--spacing-unit) * 3); /* Example adjustment */
+  font-size: 1rem;
+}
+
+/* Services Section */
+.servicesSection {
+  background-color: #0A0A0A; /* Slightly different dark background */
+  color: var(--color-text-primary);
+}
+.servicesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: calc(var(--spacing-unit) * 3);
+  margin-top: calc(var(--spacing-unit) * 4);
+  max-width: 1000px;
+  width: 90%;
+}
+.serviceItem {
+  background-color: var(--color-input-background);
+  padding: calc(var(--spacing-unit) * 3);
+  border-radius: var(--border-radius-input);
+  text-align: center;
+  border: 1px solid var(--color-input-border);
+}
+.serviceItem h3 {
+  margin-bottom: var(--spacing-unit);
+  color: var(--color-accent-cyan); /* Highlight service titles */
+}
+
+/* About Us Section */
+.aboutUsSection {
+  background-color: var(--color-background-dark); /* Same as hero, or choose another dark shade */
+  color: var(--color-text-primary);
+}
+.aboutContent {
+  display: flex;
+  flex-direction: row; /* Default row layout */
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 5);
+  margin-bottom: calc(var(--spacing-unit) * 5);
+  max-width: 1200px;
+  width: 90%;
+  text-align: left; /* Adjust text alignment within content blocks */
+}
+.aboutContent:nth-child(odd) { /* Alternate image/text order */
+  flex-direction: row-reverse;
+}
+.aboutText {
+  flex: 1;
+  padding: var(--spacing-unit) * 2;
+}
+.aboutText h3 {
+  color: var(--color-accent-gold);
+  margin-bottom: var(--spacing-unit);
+}
+.aboutImage {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.aboutImg {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--border-radius-form-outer);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+/* Hiring Partners Section */
+.hiringPartnersSection {
+  background-color: #151515; /* Another distinct dark shade */
+  color: var(--color-text-primary);
+}
+.partnersGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 4);
+  margin-top: calc(var(--spacing-unit) * 4);
+  max-width: 1200px;
+  width: 90%;
+}
+.partnerLogo {
+  max-height: 60px; /* Adjust size as needed */
+  width: auto;
+  filter: grayscale(100%) brightness(150%); /* Make logos grayscale and brighter for dark theme */
+  transition: filter 0.3s ease;
+}
+.partnerLogo:hover {
+  filter: grayscale(0%) brightness(100%); /* Color on hover */
+}
+
+/* Locations Section */
+.topLocationsSection {
+  background-color: #0A0A0A; /* Reusing a dark shade */
+  color: var(--color-text-primary);
+}
+.locationsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: calc(var(--spacing-unit) * 3);
+  margin-top: calc(var(--spacing-unit) * 4);
+  max-width: 1200px;
+  width: 90%;
+}
+.locationCard {
+  background-color: var(--color-input-background);
+  border-radius: var(--border-radius-form-inner);
+  overflow: hidden;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  text-align: center;
+  transition: transform 0.2s ease-in-out;
+  border: 1px solid var(--color-input-border);
+}
+.locationCard:hover {
+  transform: translateY(-5px);
+}
+.locationImg {
+  width: 100%;
+  height: 200px; /* Fixed height for consistency */
+  object-fit: cover;
+  display: block;
+}
+.locationCard h3 {
+  padding: calc(var(--spacing-unit) * 2);
+  color: var(--color-accent-cyan);
+}
+
+/* Partnered Universities Section */
+.partneredUniversitiesSection {
+  background-color: #151515; /* Reusing a dark shade */
+  color: var(--color-text-primary);
+}
+.universitiesGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 4);
+  margin-top: calc(var(--spacing-unit) * 4);
+  max-width: 1200px;
+  width: 90%;
+}
+.universityLogo {
+  max-height: 80px; /* Adjust size as needed */
+  width: auto;
+  filter: grayscale(100%) brightness(150%);
+  transition: filter 0.3s ease;
+}
+.universityLogo:hover {
+  filter: grayscale(0%) brightness(100%);
+}
+
+.featuresSection {
+  /* Inherits from .section */
+  background-color: var(--color-form-background-inner); /* Slightly different background for visual separation */
+  padding: calc(var(--spacing-unit) * 5) 0; /* Keep current padding */
+}
+.featuresSection h2 {
+  font-size: 2rem;
+  margin-bottom: calc(var(--spacing-unit) * 3);
+}
+.feature {
+  background-color: var(--color-input-background); /* Darker background for feature cards */
+  padding: var(--spacing-unit) * 2; /* Increased padding for cards */
+  margin-bottom: var(--spacing-unit) * 2; /* Increased margin between cards */
+  border-radius: var(--border-radius-input);
+  width: 80%; /* Example width, adjust as needed */
+  max-width: 400px; /* Max width for readability */
+  border: 1px solid var(--color-input-border); /* Subtle border */
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+}
+
+.contactSection { /* New class name for the contact section */
+  /* Inherits from .section */
+  background-color: var(--color-background-dark); /* Example background */
+}
+
+.contactFormPlaceholder {
+  /* Style for the container if you replace the button with a form */
+  margin-top: calc(var(--spacing-unit) * 4);
+}
+
+/* Media Queries for Responsiveness */
+
+@media (max-width: 768px) {
+  .section {
+    padding: 40px 15px;
+  }
+  .heroTitle {
+    font-size: 2rem;
+  }
+  .heroSubtitle {
+    font-size: 1.2rem;
+    /* margin-bottom: calc(var(--spacing-unit) * 2); */
+  }
+  .heroButton {
+    padding: 12px 25px;
+    font-size: 1rem;
+  }
+  .sectionHeading { font-size: 1.8rem; }
+  .servicesGrid, .partnersGrid, .universitiesGrid, .locationsGrid, .featuresSection {
+    grid-template-columns: 1fr; /* Stack on mobile */
+    gap: 20px;
+  }
+  .aboutText {
+    max-width: 100%;
+  }
+    .partnerLogo, .universityLogo {
+    height: 60px;
+  }
+    .locationImg {
+    height: 180px;
+  }
+  .authActions, .loggedInActions {
+    flex-direction: column;
+    gap: var(--spacing-unit);
+  }
+  .aboutContent {
+    flex-direction: column; /* Stack elements vertically on smaller screens */
+    text-align: center;
+    gap: calc(var(--spacing-unit) * 2); /* Adjust gap for stacking */
+  }
+  .aboutText h3 {
+   font-size: 1.2rem; /* Slightly smaller heading */
+   margin-bottom: calc(var(--spacing-unit) * 0.5); /* Reduced margin */
+  }
+  .aboutText p {
+   font-size: 0.7rem; /* Smaller body text */
+   line-height: 1.5; /* Slightly tighter line height */
+  }
+  .aboutImage { /* Remove padding on mobile */
+    padding-left: 0;
+  }
+  .aboutContent:nth-child(odd) { /* Reset alternating order */
+    flex-direction: column;
+  }
+  .serviceItem, .feature {
+    width: 90%;
+  }
+}
+
+@media (max-width: 480px) {
+    /* .heroTitle { font-size: 2rem; } */ /* Handled by global.css */
+    .heroSubtitle {
+        font-size: 1rem;
+    }
+    .sectionHeading { font-size: 1.5rem; }
+    .heroButton {
+        padding: 10px 20px;
+        font-size: 0.9rem;
+    }
+    .serviceItem h3 {
+        font-size: 1.4rem;
+    }
+    .aboutText h3 {
+        font-size: 1.5rem;
+    }
+}

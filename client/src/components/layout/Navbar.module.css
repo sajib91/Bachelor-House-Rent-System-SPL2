@@ -1,0 +1,165 @@
+.navbar {
+  background-color: var(--navbar-bg);
+  padding: 15px 0; /* Adjust padding */
+  border-bottom: 1px solid #2a2a2a; /* Subtle border */
+  /* Ensure it's not absolutely positioned in a way that breaks layout */
+  /* If it's fixed, make sure its height is accounted for in AuthLayout */
+  /* If you want it fixed to the top: */
+  position: fixed; /* Make it fixed */
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000; /* Ensure it's above other content */
+  height: var(--navbar-height); /* Ensure this height is defined in theme.css or here */
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Center the navContainer horizontally */
+}
+
+.navContainer {
+  width: 90%; /* Match global container width */
+  max-width: 1200px; /* Match global container max-width */
+  margin: 0 auto; /* Center the container itself */
+  display: flex; /* Make the container a flexbox */
+  justify-content: space-between; /* Pushes logo to left, nav links to right */
+  align-items: center; /* Vertically align items in the container */
+  height: 100%; /* Ensure it takes full height of the navbar */
+}
+
+.navLinks {
+  display: flex; /* Make the links themselves a flex container */
+  gap: 20px; /* Space out the navigation links */
+  align-items: center; /* Align items vertically */
+}
+
+
+/* Add specific colors for Navbar links based on theme.css */
+.logo {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: var(--navbar-logo-color);
+  text-decoration: none;
+}
+
+.navLink {
+  color: var(--text-color-navbar-link);
+  text-decoration: none;
+  font-size: 1rem;
+  padding: 8px 12px;
+  border-radius: var(--border-radius-input);
+  background-color: transparent; /* Explicitly set to transparent */
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.navLink:hover {
+  color: var(--text-color-navbar-link-hover);
+  background-color: rgba(var(--color-accent-cyan-rgb), 0.1); /* Subtle hover */
+}
+
+.activeNavLink {
+  background-color: var(--navbar-active-link-bg);
+  color: var(--navbar-active-link-text) !important;
+  font-weight: var(--font-weight-medium);
+}
+
+.logoutButton {
+  /* Inherit navLink styles and then override for specific button needs */
+  background-color: transparent; /* Start transparent */
+  border: none; /* Remove button default border */
+  cursor: pointer;
+  &:hover {
+    background-color: var(--color-accent-cyan);
+    color: var(--color-button-primary-text);
+  }
+}
+
+/* Mobile Menu Toggle (Hamburger Icon) */
+.menuToggle {
+  display: none; /* Hidden by default, shown on mobile */
+  flex-direction: column;
+  justify-content: space-around;
+  width: 30px;
+  height: 25px;
+  cursor: pointer;
+  z-index: 1001; /* Ensure it's above the nav links when open */
+}
+
+.hamburger {
+  width: 100%;
+  height: 3px;
+  background-color: var(--color-text-primary); /* Color of the hamburger lines */
+  border-radius: 2px;
+  transition: all 0.3s linear;
+  position: relative;
+  transform-origin: 1px; /* For rotation effect */
+}
+
+/* Animation for the "X" when menu is open */
+.menuToggle .hamburger:nth-child(1).open {
+  transform: rotate(45deg);
+}
+
+.menuToggle .hamburger:nth-child(2).open {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.menuToggle .hamburger:nth-child(3).open {
+  transform: rotate(-45deg);
+}
+
+
+/* Media Query for Mobile Navbar */
+@media (max-width: 768px) {
+  .navContainer {
+    justify-content: space-between; /* Keep logo and toggle separated */
+  }
+
+  .navLinks {
+    display: none; /* Hide nav links by default on mobile */
+    flex-direction: column; /* Stack links vertically */
+    position: fixed; /* Position fixed for full screen overlay/slide-in */
+    top: var(--navbar-height); /* Start below the navbar */
+    left: 0;
+    width: 100%;
+    height: calc(100vh - var(--navbar-height)); /* Take remaining viewport height */
+    background-color: var(--navbar-bg); /* Use navbar background or a slightly darker one */
+    z-index: 999; /* Below the navbar but above other content */
+    padding: 20px;
+    box-sizing: border-box;
+    align-items: center; /* Center links horizontally */
+    overflow-y: auto; /* Enable scrolling for many links */
+    transition: transform 0.3s ease-in-out; /* Smooth slide-in transition */
+    transform: translateX(100%); /* Start off-screen to the right */
+  }
+
+  .navLinks.open {
+    display: flex; /* Show when menu is open */
+    transform: translateX(0); /* Slide in from the right */
+  }
+
+  .navLinks .navLink,
+  .navLinks .logoutButton {
+    width: 100%; /* Make links take full width */
+    text-align: center;
+    padding: 15px 0; /* More padding for touch targets */
+    font-size: 1.2rem; /* Larger font size */
+    border-bottom: 1px solid var(--color-input-border); /* Separator */
+  }
+  .navLinks .navLink:last-child,
+  .navLinks .logoutButton:last-child {
+    border-bottom: none; /* No border on the last item */
+  }
+
+
+  .menuToggle {
+    display: flex; /* Show hamburger icon on mobile */
+  }
+}
+
+/* Optional: Further adjustments for very small screens if needed */
+@media (max-width: 480px) {
+  .logo {
+    font-size: 1.5rem;
+  }
+}

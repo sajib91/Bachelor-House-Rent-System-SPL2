@@ -1,0 +1,53 @@
+/* frontend/src/styles/theme.css */
+:root {
+  /* Colors from Sample UI */
+  --color-background-dark: #07111b;
+  --color-form-background-inner: #0b1724;
+  --color-navbar-background: #08101a;
+  --color-input-background: rgba(13, 23, 36, 0.92);
+  --color-input-border: rgba(255, 255, 255, 0.12);
+  --color-input-icon: #ffd166;
+
+  --color-text-primary: #f6f1e8;
+  --color-text-secondary: rgba(246, 241, 232, 0.72);
+  --color-text-link: #ffd166;
+  --color-text-link-hover: #f08a5d;
+
+  --color-accent-cyan: #48cae4;
+  --color-accent-gold: #ffd166;
+  --gradient-border: linear-gradient(135deg, #ffd166, #f08a5d);
+
+  --color-button-primary-bg: #ffd166;
+  --color-button-primary-text: #09111b;
+  --color-button-primary-hover-bg: #f8c74f;
+
+  --color-error: #e53e3e; /* Red for errors */
+  --color-success: #38a169; /* Green for success */
+
+  /* Typography */
+  --font-family-main: 'Plus Jakarta Sans', 'Poppins', sans-serif;
+  --font-size-base: 16px;
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+
+  /* Borders & Spacing */
+  --border-radius-form-outer: 20px;
+  --border-radius-form-inner: 24px;
+  --border-radius-input: 14px;
+  --border-radius-button: 999px;
+  --spacing-unit: 8px;
+
+   /* Navbar specific variables (from Navbar.module.css) */
+  --navbar-height: 84px;
+  --navbar-bg: var(--color-navbar-background);
+  --navbar-logo-color: var(--color-text-primary);
+  --text-color-navbar-link: var(--color-text-secondary);
+  --text-color-navbar-link-hover: var(--color-text-primary);
+  --navbar-active-link-bg: rgba(var(--color-accent-gold-rgb), 0.12);
+  --navbar-active-link-text: var(--color-accent-cyan);
+
+  --color-accent-cyan-rgb: 72, 202, 228;
+  --color-accent-gold-rgb: 255, 209, 102;
+}

@@ -1,0 +1,152 @@
+/* frontend/src/pages/PropertyDetailsPage.module.css */
+.propertyDetailsPage {
+    padding: 40px 20px;
+    background-color: var(--color-background-dark);
+    color: var(--color-text-primary);
+    min-height: calc(100vh - var(--navbar-height));
+    display: flex;
+    justify-content: center;
+}
+
+.detailsContainer {
+    max-width: 900px;
+    width: 100%;
+    background-color: var(--color-form-background-outer);
+    padding: calc(var(--spacing-unit) * 4);
+    border-radius: var(--border-radius-form-outer);
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
+
+.loading, .error, .notFound {
+    text-align: center;
+    font-size: 1.2rem;
+    margin-top: 50px;
+}
+
+.title {
+    font-size: 2.5rem;
+    color: var(--color-accent-gold);
+    margin-bottom: calc(var(--spacing-unit) * 3);
+    text-align: center;
+}
+
+.overview, .sectionBlock, .ownerInfo {
+    background-color: var(--color-input-background);
+    padding: calc(var(--spacing-unit) * 3);
+    border-radius: var(--border-radius-input);
+    margin-bottom: calc(var(--spacing-unit) * 4);
+    border: 1px solid var(--color-input-border);
+}
+
+.overview p, .sectionBlock p, .ownerInfo p {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    margin-bottom: calc(var(--spacing-unit) * 1);
+    color: var(--color-text-secondary);
+}
+
+.overview .rent {
+    font-size: 1.8rem;
+    font-weight: var(--font-weight-bold);
+    color: var(--color-accent-cyan);
+    margin-bottom: calc(var(--spacing-unit) * 1.5);
+}
+
+.overview .address {
+    font-style: italic;
+    color: var(--color-text-tertiary);
+    margin-bottom: calc(var(--spacing-unit) * 2);
+}
+
+.sectionBlock h2, .ownerInfo h2 {
+    font-size: 1.8rem;
+    color: var(--color-accent-gold);
+    margin-bottom: calc(var(--spacing-unit) * 2);
+    text-align: center;
+}
+
+.list {
+    list-style: none; /* Remove default bullet points */
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: calc(var(--spacing-unit) * 1);
+}
+
+.list li {
+    background-color: var(--color-background-dark);
+    padding: calc(var(--spacing-unit) * 1.5);
+    border-radius: var(--border-radius-small);
+    border: 1px dashed var(--color-input-border);
+    font-size: 1rem;
+}
+
+.mapContainer {
+    width: 100%;
+    height: 400px; /* Fixed height for the map */
+    background-color: #222;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #888;
+    border-radius: var(--border-radius-input);
+    overflow: hidden;
+}
+
+.backButtonContainer {
+    display: flex;
+    justify-content: center;
+    margin-top: calc(var(--spacing-unit) * 4);
+    margin-bottom: calc(var(--spacing-unit) * 2);
+}
+
+.backButton {
+    background-color: var(--color-button-primary-bg); /* Use your primary button color variable */
+    color: var(--color-button-primary-text); /* Use your primary button text color variable */
+    border: none;
+    padding: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 4);
+    border-radius: var(--border-radius-button);
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: var(--font-weight-bold);
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.backButton:hover {
+    background-color: var(--color-button-primary-hover-bg); /* Hover color */
+    transform: translateY(-2px); /* Slight lift effect */
+}
+
+.backButton:active {
+    transform: translateY(0); /* Press effect */
+    box-shadow: var(--shadow-button-primary-active); /* Recessed shadow on click */
+}
+
+@media (max-width: 768px) {
+    .title {
+        font-size: 2rem;
+    }
+    .mainImage {
+        height: 200px;
+    }
+    .detailsContainer {
+        padding: calc(var(--spacing-unit) * 2);
+    }
+    .overview p, .sectionBlock p, .ownerInfo p {
+        font-size: 1rem;
+        grid-template-columns: 1fr;
+    }
+    .sectionBlock h2, .ownerInfo h2 {
+        font-size: 1.5rem;
+    }
+    .list {
+        grid-template-columns: 1fr;
+    }
+    .mapContainer {
+        height: 300px;
+    }
+    .backButton {
+        padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 3);
+        font-size: 1rem;
+    }
+}

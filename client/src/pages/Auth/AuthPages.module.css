@@ -1,0 +1,208 @@
+/* frontend/src/Auth/AuthPages.module.css */
+/* === Auth Form Container === */
+.authFormContainerWithGradientBorder {
+  /* Use theme variables for background and gradient */
+  background-color: var(--color-form-background-inner); /* Background for the border space */
+  border-radius: var(--border-radius-form-outer); /* Defined in theme.css */
+  box-shadow: var(--shadow-medium);
+  position: relative;
+  overflow: hidden; /* Ensures content respects border-radius */
+  width: 100%;
+  z-index: 1;
+
+  background-image: var(--gradient-border); /* Defined in theme.css */
+  max-width: 500px; /* Slightly wider form as in the second image */
+  padding: 2px; /* Thinner gradient border */
+
+}
+
+/* === Auth Form Styles === */
+.authForm {
+  background-color: var(--color-form-background-inner); /* Inner background */
+  padding: 35px 50px; /* More padding, wider form feel */
+  border-radius: var(--border-radius-form-inner); /* Slightly less than outer to show border */
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* Consistent spacing between elements */
+}
+
+/* .title { */
+  /* text-align: center; */
+  /* color: var(--color-text-primary); */
+  /* margin-bottom: 25px; Increased margin-bottom for title */
+  /* font-size: 2.2rem; Larger title */
+  /* font-weight: var(--font-weight-light); Lighter font weight as in UI */
+  /* letter-spacing: 0.5px; */
+/* } */
+
+/* === Input Group Styling  === */
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* margin-bottom handled by form gap */
+}
+
+.inputIcon {
+  position: absolute;
+  left: 18px; /* Adjust icon position */
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-input-icon); /* Muted icon color from theme */
+  font-size: 1.1rem;
+  pointer-events: none; /* Ensure icon doesn't block clicks */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1; /* Ensure icon is above the input */
+}
+
+/* === Input Field Styles === */
+.inputField {
+  width: 100%;
+  padding: 14px 18px 14px 50px; /* Increased padding, space for icon */
+  background-color: var(--color-input-background);
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--border-radius-input); /* Rounded inputs from theme */
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: 0;
+}
+.inputField::placeholder {
+  color: var(--color-text-secondary); /* Placeholder color from theme */
+  opacity: 0.7;
+}
+.inputField:focus {
+  outline: none;
+  border-color: var(--color-accent-cyan); /* Cyan border on focus */
+  box-shadow: 0 0 0 3px rgba(var(--color-accent-cyan-rgb), 0.3); /* Cyan glow */
+}
+.inputError {
+  border-color: var(--color-error) !important; /* Error border from theme */
+}
+
+/* === Select Field Styles === */
+.selectField {
+  -webkit-appearance: none; /* Remove default arrow on WebKit browsers */
+  -moz-appearance: none; /* Remove default arrow on Firefox */
+  appearance: none; /* Remove default arrow */
+  width: 100%;
+  padding: 10px 10px 10px 50px; /* Adjust padding-left to clear the icon. */
+  background-color: var(--color-input-background);
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--border-radius-input);
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+  background-image: url('data:image/svg+xml;utf8,<svg fill="%23E0E0E0" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>'); /* Custom SVG arrow */
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: 0;
+}
+
+.selectField:focus {
+  outline: none;
+  border-color: var(--color-accent-cyan);
+  box-shadow: 0 0 0 3px rgba(var(--color-accent-cyan-rgb), 0.3);
+}
+
+/* === Submit Button === */
+.submitButtonFullWidth {
+  background-color: transparent; /* Make background transparent by default */
+  color: var(--color-accent-cyan); /* Text color is cyan by default */
+  padding: 15px 20px; /* Increased padding */
+  border: 2px solid var(--color-accent-cyan); /* Add a border to define its shape when transparent */
+  border-radius: var(--border-radius-button); /* Rounded from theme */
+  font-size: 1.1rem; /* Slightly larger text */
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  text-transform: uppercase; /* Optional: Make text uppercase as seen in some button designs */
+  letter-spacing: 0.05em;
+  width: 100%; /* Full width button */
+  margin-top: 20px; /* Spacing before button */
+}
+.submitButtonFullWidth:hover {
+  background-color: var(--color-accent-cyan); /* Fill with cyan on hover */
+  color: var(--color-button-primary-text); /* Text becomes white on hover */
+  border-color: var(--color-accent-cyan); /* Ensure border also matches hover color if desired */
+  box-shadow: 0 0 15px rgba(var(--color-accent-cyan-rgb), 0.5); /* Optional: Add a subtle glow */
+  transform: translateY(-2px); /* Subtle lift effect */
+}
+.submitButtonFullWidth:disabled {
+  background-color: var(--color-input-border); /* Muted color when disabled */
+  cursor: not-allowed;
+  transform: translateY(0);
+  opacity: 0.7;
+}
+/* === Links in Auth Forms === */
+.authLinkMuted {
+  text-align: center;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: color 0.2s ease;
+  margin-top: 15px; /* Spacing after button */
+}
+
+.linksContainer {
+    display: flex;
+    justify-content: space-between; /* This will push links to opposite ends */
+    align-items: center; /* Vertically align them if they have different heights */
+    width: 100%; /* Ensure it takes full width of the form */
+    margin-top: 15px; /* Add some space above the links */
+    font-size: 0.9rem; /* Adjust font size if needed */
+}
+
+.authLinkHighlight {
+  color: var(--color-accent-cyan); /* Cyan link */
+  text-decoration: none; /* No underline by default */
+  font-weight: var(--font-weight-medium);
+  transition: color 0.2s ease, text-decoration 0.2s ease;
+}
+.authLinkHighlight:hover {
+  color: var(--color-accent-gold); /* Gold on hover */
+  text-decoration: underline;  /* Underline on hover */
+}
+
+/* === Error Message Styles  === */
+.errorMessage {
+  color: var(--color-error); /* Error color from theme */
+  font-size: 0.8rem;
+  margin-top: 5px; /*Adjust to position under input*/
+  margin-bottom: 5px;
+  padding-left: 5px;
+}
+.serverError {
+  color: var(--color-error);
+  background-color: rgba(var(--color-error-rgb), 0.1); /* If you add RGB error variable */
+  border: 1px solid var(--color-error);
+  padding: 10px;
+  border-radius: var(--border-radius-input);
+  margin-bottom: 20px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* --- Responsive Adjustments --- */
+@media (max-width: 768px) {
+    .authFormContainerWithGradientBorder {
+        margin: 40px 15px;
+        padding: 5px;
+    }
+
+    .inputField, .selectField, .submitButtonFullWidth {
+        padding: 14px 18px 14px 50px; /* Increased padding, space for icon */
+        font-size: 0.95rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .authFormContainerWithGradientBorder {
+        margin: 20px 10px;
+        padding: 5px;
+    }
+
+}

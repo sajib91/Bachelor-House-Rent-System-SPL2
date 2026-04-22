@@ -1,0 +1,89 @@
+/* src/pages/Dashboard/DashboardPage.module.css */
+.dashboardContainer {
+  padding-top: calc(var(--navbar-height) + var(--spacing-unit) * 4);
+  padding-bottom: calc(var(--spacing-unit) * 4);
+}
+
+.title {
+  font-size: 2.2rem;
+  color: var(--color-text-primary);
+  margin-bottom: calc(var(--spacing-unit) * 3);
+  text-align: center;
+  border-bottom: 1px solid var(--color-input-border);
+  padding-bottom: var(--spacing-unit);
+}
+
+.profileCard {
+  background-color: var(--color-form-background-inner);
+  padding: calc(var(--spacing-unit) * 3);
+  border-radius: var(--border-radius-input);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  max-width: 700px;
+  margin: 0 auto calc(var(--spacing-unit) * 3) auto;
+}
+
+.greeting {
+  font-size: 1.8rem;
+  color: var(--color-accent-cyan);
+  margin-bottom: var(--spacing-unit);
+}
+
+.resendButton {
+  margin-left: 15px; /* Spacing from the "Yes/No" text */
+  padding: 8px 15px;
+  background-color: #007bff; /* Example blue color */
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s ease;
+  white-space: nowrap; /* Prevent button text from wrapping */
+}
+
+.resendButton:hover:not(:disabled) {
+  background-color: #0056b3; /* Darker blue on hover */
+}
+
+.resendButton:disabled {
+  background-color: #cccccc; /* Greyed out when disabled */
+  cursor: not-allowed;
+}
+
+.profileCard p {
+  display: flex;
+   align-items: center; /* Vertically align items in the paragraph */
+  flex-wrap: wrap; /* Allow wrapping if content is too long */
+  font-size: 1rem;
+  color: var(--color-text-secondary);
+  margin-bottom: calc(var(--spacing-unit) * 1.25);
+  line-height: 1.7;
+}
+
+.profileCard p strong {
+  color: var(--color-text-primary);
+  margin-right: var(--spacing-unit);
+}
+
+.adminSection, .contentCreatorSection /* etc. */ {
+  background-color: color-mix(in srgb, var(--color-form-background-inner) 90%, black);
+  padding: calc(var(--spacing-unit) * 2);
+  border-radius: var(--border-radius-input);
+  margin-top: calc(var(--spacing-unit) * 3);
+  border-left: 4px solid var(--color-accent-gold);
+}
+
+.adminSection h3 {
+  color: var(--color-accent-gold);
+  margin-bottom: var(--spacing-unit);
+}
+
+.loading, .error {
+  text-align: center;
+  font-size: 1.2rem;
+  color: var(--color-text-secondary);
+  padding: calc(var(--spacing-unit) * 5) 0;
+}
+.error {
+    color: var(--color-error);
+}

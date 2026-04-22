@@ -1,0 +1,40 @@
+.button {
+  padding: 10px 20px; /* Base padding */
+  font-size: 1rem;
+  border-radius: var(--border-radius-button); /* From sample */
+  cursor: pointer;
+  border: none; /* Sample button has no border */
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase; /* As in "LOGIN" */
+  letter-spacing: 0.5px;
+}
+
+.primary {
+  background-color: var(--color-button-primary-bg);
+  color: var(--color-button-primary-text);
+}
+.primary:hover:not(:disabled) {
+  background-color: var(--color-button-primary-hover-bg);
+  box-shadow: 0 0 15px rgba(var(--color-accent-cyan-rgb), 0.5); /* Optional: Add a subtle glow */
+  transform: translateY(-1px); /* Subtle lift effect */
+}
+.primary:disabled {
+  background-color: var(--color-text-secondary);
+  color: var(--color-background-dark);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Add other variants like .secondary if needed, styled consistently */
+.secondary {
+  background-color: transparent;
+  color: var(--color-accent-cyan);
+  border: 1px solid var(--color-accent-cyan);
+}
+.secondary:hover:not(:disabled) {
+  background-color: var(--color-accent-cyan);
+  color: var(--color-button-primary-text);
+  box-shadow: 0 0 15px rgba(var(--color-accent-cyan-rgb), 0.5); /* Optional: Add a subtle glow */
+  transform: translateY(-1px); /* Subtle lift effect */
+}
