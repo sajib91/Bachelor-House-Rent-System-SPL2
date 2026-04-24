@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 import authService from '../../services/authService';
 import apiClient from '../../services/apiService';
+import contactService from '../../services/contactService';
+
+const DASHBOARD_ERROR_TOAST_ID = 'dashboard-load-error';
 
 const DashboardPage = () => {
+  const location = useLocation();
   const { token, isLoading: isAuthContextLoading } = useAuth();
   const [profile, setProfile] = useState(null);
   const [properties, setProperties] = useState([]);
@@ -15,9 +19,13 @@ const DashboardPage = () => {
   const [tenantReminders, setTenantReminders] = useState(null);
   const [landlordIntelligence, setLandlordIntelligence] = useState([]);
   const [adminInsights, setAdminInsights] = useState(null);
+  const [adminContactMessages, setAdminContactMessages] = useState([]);
+  const [quickFeedback, setQuickFeedback] = useState({ topic: 'Feedback', message: '', phone: '' });
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [trackerMonth, setTrackerMonth] = useState(currentMonth);
   const [paymentForms, setPaymentForms] = useState({});
+  const [isRedirectingToGateway, setIsRedirectingToGateway] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
 
   const loadDashboardData = async () => {
@@ -37,14 +45,21 @@ const DashboardPage = () => {
       setProfile(user);
 
       if (user.role === 'Admin') {
-        const [usersResponse, publicationResponse, insightsResponse] = await Promise.all([
+        const [usersResponse, publicationResponse, insightsResponse, contactResponse] = await Promise.allSettled([
           apiClient.get('/auth/admin/pending-verifications'),
           apiClient.get('/properties/admin/pending-publications'),
           apiClient.get('/properties/admin/insights'),
+          contactService.getAdminMessages(),
         ]);
-        setPendingUsers(usersResponse.data.users || []);
-        setPendingPublications(publicationResponse.data.properties || []);
-        setAdminInsights(insightsResponse.data.insights || null);
+
+        setPendingUsers(usersResponse.status === 'fulfilled' ? (usersResponse.value.data.users || []) : []);
+        setPendingPublications(publicationResponse.status === 'fulfilled' ? (publicationResponse.value.data.properties || []) : []);
+        setAdminInsights(insightsResponse.status === 'fulfilled' ? (insightsResponse.value.data.insights || null) : null);
+        setAdminContactMessages(contactResponse.status === 'fulfilled' ? (contactResponse.value.messages || []) : []);
+
+        if ([usersResponse, publicationResponse, insightsResponse, contactResponse].every((result) => result.status === 'rejected')) {
+          toast.error('Unable to load dashboard data.', { toastId: DASHBOARD_ERROR_TOAST_ID });
+        }
         setProperties([]);
         setTenantReminders(null);
         setLandlordIntelligence([]);
@@ -60,6 +75,7 @@ const DashboardPage = () => {
         setPendingUsers([]);
         setPendingPublications([]);
         setAdminInsights(null);
+        setAdminContactMessages([]);
         setTenantReminders(null);
       } else {
         const [listingsResponse, remindersResponse] = await Promise.all([
@@ -72,10 +88,11 @@ const DashboardPage = () => {
         setPendingUsers([]);
         setPendingPublications([]);
         setAdminInsights(null);
+        setAdminContactMessages([]);
         setLandlordIntelligence([]);
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Unable to load dashboard data.');
+      toast.error(error.response?.data?.message || 'Unable to load dashboard data.', { toastId: DASHBOARD_ERROR_TOAST_ID });
     } finally {
       setIsProfileLoading(false);
     }
@@ -190,7 +207,7 @@ const DashboardPage = () => {
 
   const updatePaymentForm = (propertyId, field, value) => {
     setPaymentForms((previous) => {
-      const existing = previous[propertyId] || { provider: 'bKash', transactionId: '', month: currentMonth };
+      const existing = previous[propertyId] || { month: currentMonth, paymentMethod: 'bKash' };
       return {
         ...previous,
         [propertyId]: {
@@ -204,67 +221,43 @@ const DashboardPage = () => {
   const submitTenantPaymentFromDashboard = async (propertyId, amountPerSeat, seatsBooked) => {
     const draft = paymentForms[propertyId] || {};
     try {
+      setIsRedirectingToGateway(true);
       const totalAmount = Number(amountPerSeat || 0) * Number(seatsBooked || 1);
-      const response = await apiClient.post(`/properties/${propertyId}/payments`, {
+      const response = await apiClient.post(`/properties/${propertyId}/payments/ssl/initiate`, {
         month: draft.month || currentMonth,
-        provider: draft.provider || 'bKash',
-        transactionId: draft.transactionId,
         amount: totalAmount,
+        paymentMethod: draft.paymentMethod || 'bKash',
       });
-      toast.success(response.data.message || 'Rent payment submitted.');
-      setPaymentForms((previous) => ({
-        ...previous,
-        [propertyId]: { provider: 'bKash', transactionId: '' },
-      }));
-      await loadDashboardData();
+
+      const gatewayUrl = response.data?.gatewayUrl;
+      if (!gatewayUrl) {
+        throw new Error('Missing SSL gateway URL.');
+      }
+
+      toast.info('Redirecting to SSL secure payment gateway...');
+      window.location.assign(gatewayUrl);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to submit rent payment.');
+      setIsRedirectingToGateway(false);
     }
   };
 
-  const bulkPaymentForm = paymentForms.__bulk || { provider: 'bKash', transactionId: '', month: currentMonth };
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const paymentStatus = query.get('paymentStatus');
+    if (!paymentStatus) return;
 
-  const updateBulkPaymentForm = (field, value) => {
-    setPaymentForms((previous) => ({
-      ...previous,
-      __bulk: {
-        ...bulkPaymentForm,
-        [field]: value,
-      },
-    }));
-  };
-
-  const payAllDueSeats = async () => {
-    if (unpaidCurrentMonthRows.length === 0) {
-      toast.info('No unpaid seats found for payment.');
-      return;
+    if (paymentStatus === 'success') {
+      toast.success('Payment successful. You can view the SSL slip from your property payment status.');
+    } else if (paymentStatus === 'cancelled') {
+      toast.info('Payment cancelled.');
+    } else {
+      toast.error('Payment failed or validation did not complete.');
     }
 
-    const monthToUse = bulkPaymentForm.month || currentMonth;
-
-    try {
-      await Promise.all(
-        unpaidCurrentMonthRows.map(({ property, application }) => {
-          const amount = Number(property.monthlyRentPerSeat || 0) * Number(application.seatsRequested || 1);
-          return apiClient.post(`/properties/${property._id}/payments`, {
-            month: monthToUse,
-            provider: bulkPaymentForm.provider || 'bKash',
-            transactionId: bulkPaymentForm.transactionId,
-            amount,
-          });
-        })
-      );
-
-      toast.success('All due seat payments submitted.');
-      setPaymentForms((previous) => ({
-        ...previous,
-        __bulk: { provider: 'bKash', transactionId: '', month: currentMonth },
-      }));
-      await loadDashboardData();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Unable to submit all due payments.');
-    }
-  };
+    setIsRedirectingToGateway(false);
+    loadDashboardData();
+  }, [location.search]);
 
   const updateTrackedPaymentStatus = async (propertyId, paymentId, status) => {
     try {
@@ -273,6 +266,34 @@ const DashboardPage = () => {
       await loadDashboardData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to update payment status.');
+    }
+  };
+
+  const submitQuickFeedback = async () => {
+    if (!profile) return;
+
+    if (!quickFeedback.message.trim()) {
+      toast.error('Please write your inquiry or feedback message.');
+      return;
+    }
+
+    setSubmittingFeedback(true);
+    try {
+      const payload = {
+        name: profile.fullName || profile.username || 'User',
+        email: profile.email,
+        phone: quickFeedback.phone || profile.phoneNumber || '',
+        topic: quickFeedback.topic,
+        message: quickFeedback.message.trim(),
+      };
+
+      const response = await contactService.submitContactForm(payload);
+      toast.success(response.message || 'Your message has been sent to admin.');
+      setQuickFeedback({ topic: 'Feedback', message: '', phone: '' });
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to submit feedback right now.');
+    } finally {
+      setSubmittingFeedback(false);
     }
   };
 
@@ -373,6 +394,21 @@ const DashboardPage = () => {
                 </>
               ) : <p style={mutedTextStyle}>No insights available yet.</p>}
             </article>
+
+            <article style={panelStyle}>
+              <h2 style={panelTitleStyle}>User inquiries and feedback</h2>
+              {adminContactMessages.length > 0 ? adminContactMessages.slice(0, 6).map((entry) => (
+                <div key={entry._id} style={listItemStyle}>
+                  <div>
+                    <strong>{entry.name} ({entry.topic})</strong>
+                    <p style={smallTextStyle}>{entry.email}</p>
+                    <p style={smallTextStyle}>{entry.message?.slice(0, 80)}{entry.message?.length > 80 ? '...' : ''}</p>
+                  </div>
+                  <span style={badgeStyle(entry.status || 'Pending')}>{entry.status || 'Open'}</span>
+                </div>
+              )) : <p style={mutedTextStyle}>No inquiries or feedback submitted yet.</p>}
+              <Link to="/admin" style={ctaLinkStyle}>Open full admin inbox</Link>
+            </article>
           </section>
         </>
       )}
@@ -456,6 +492,31 @@ const DashboardPage = () => {
               </div>
             )) : <p style={mutedTextStyle}>No listing intelligence yet.</p>}
           </article>
+
+          <article style={panelStyle}>
+            <h2 style={panelTitleStyle}>Contact admin or send feedback</h2>
+            <p style={smallTextStyle}>Report any issue or share feedback directly from your dashboard.</p>
+            <label style={fieldStyle}>
+              <span>Topic</span>
+              <select value={quickFeedback.topic} onChange={(event) => setQuickFeedback((prev) => ({ ...prev, topic: event.target.value }))} style={inputStyle}>
+                <option value="Feedback">Feedback</option>
+                <option value="General Inquiry">General Inquiry</option>
+                <option value="Technical Support">Technical Support</option>
+                <option value="Partnership">Partnership</option>
+                <option value="Complaint">Complaint</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <label style={fieldStyle}>
+              <span>Phone (optional)</span>
+              <input value={quickFeedback.phone} onChange={(event) => setQuickFeedback((prev) => ({ ...prev, phone: event.target.value }))} style={inputStyle} placeholder="Your phone number" />
+            </label>
+            <label style={fieldStyle}>
+              <span>Message</span>
+              <textarea value={quickFeedback.message} onChange={(event) => setQuickFeedback((prev) => ({ ...prev, message: event.target.value }))} style={textareaStyle} rows={4} placeholder="Write your issue or feedback" />
+            </label>
+            <button type="button" onClick={submitQuickFeedback} style={ctaButtonStyle} disabled={submittingFeedback}>{submittingFeedback ? 'Sending...' : 'Send to admin'}</button>
+          </article>
         </section>
       )}
 
@@ -479,6 +540,7 @@ const DashboardPage = () => {
 
           <article style={panelStyle}>
             <h2 style={panelTitleStyle}>Your seat requests</h2>
+            <p style={smallTextStyle}>Seat requests are reviewed only by the landlord. Admin does not approve tenant seat requests.</p>
             {myTenantApplications.length > 0 ? myTenantApplications.map(({ property, application }) => (
               <div key={application._id} style={listItemStyle}>
                 <div>
@@ -498,30 +560,21 @@ const DashboardPage = () => {
             {new Date().getDate() <= 5 && unpaidCurrentMonthCount > 0 && (
               <p style={alertTextStyle}>Monthly reminder: You have {unpaidCurrentMonthCount} unpaid rent item(s) for this month.</p>
             )}
-            <label style={fieldStyle}>
-              <span>Bulk payment month</span>
-              <input type="month" value={bulkPaymentForm.month} onChange={(event) => updateBulkPaymentForm('month', event.target.value)} style={inputStyle} />
-            </label>
-            <label style={fieldStyle}>
-              <span>Bulk provider</span>
-              <select value={bulkPaymentForm.provider} onChange={(event) => updateBulkPaymentForm('provider', event.target.value)} style={inputStyle}>
-                <option value="bKash">bKash</option>
-                <option value="Nagad">Nagad</option>
-                <option value="Rocket">Rocket</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label style={fieldStyle}>
-              <span>Bulk transaction ID</span>
-              <input value={bulkPaymentForm.transactionId} onChange={(event) => updateBulkPaymentForm('transactionId', event.target.value)} style={inputStyle} placeholder="Txn ID" />
-            </label>
-            <button type="button" onClick={payAllDueSeats} style={ctaButtonStyle} disabled={unpaidCurrentMonthRows.length === 0}>Pay all due seats</button>
+            <p style={smallTextStyle}>Payments are processed via SSLCommerz secure gateway. Select a payment method, then complete account number, OTP, and PIN verification to receive an auto-generated slip.</p>
             {tenantMonthPaymentRows.length > 0 ? tenantMonthPaymentRows.map(({ property, application, payment }) => {
-              const draft = paymentForms[property._id] || { provider: 'bKash', transactionId: '', month: property.rentalMonth || currentMonth };
+              const draft = paymentForms[property._id] || { month: property.rentalMonth || currentMonth, paymentMethod: 'bKash' };
               const defaultPaymentMonth = property.rentalMonth || currentMonth;
               const paymentMonth = draft.month || defaultPaymentMonth;
+              const selectedPaymentMethod = draft.paymentMethod || 'bKash';
               const seats = Number(application.seatsRequested || 1);
               const totalAmount = Number(property.monthlyRentPerSeat || 0) * seats;
+              const paymentJourneySteps = [
+                { key: 'apply', label: 'Apply seat', done: true },
+                { key: 'approval', label: 'Landlord approves', done: application.status === 'Approved' },
+                { key: 'method', label: 'Select method', done: Boolean(selectedPaymentMethod) },
+                { key: 'otp', label: 'SSL OTP + PIN', done: Boolean(payment) || isRedirectingToGateway },
+                { key: 'slip', label: 'Slip ready', done: payment?.status === 'Paid' },
+              ];
 
               return (
                 <div key={`${property._id}-${application._id}`} style={listBlockStyle}>
@@ -529,26 +582,40 @@ const DashboardPage = () => {
                   <p style={smallTextStyle}>{seats} seat(s) · Total ৳{totalAmount}</p>
                   <p style={smallTextStyle}>Rental month: {property.rentalMonth || currentMonth}</p>
                   <p style={smallTextStyle}>Payment status: {payment?.status || 'Not submitted'}</p>
-                  {payment ? null : (
+                  <div style={paymentJourneyStyle}>
+                    {paymentJourneySteps.map((step, index) => (
+                      <div key={step.key} style={paymentStepStyle(step.done)}>
+                        <span style={paymentStepIndexStyle(step.done)}>{index + 1}</span>
+                        <span>{step.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {payment?.status === 'Paid' ? (
+                    <Link to={`/payments/slip/${property._id}/${payment._id}`} style={ctaLinkStyle}>View SSL slip</Link>
+                  ) : (
                     <>
                       <label style={fieldStyle}>
                         <span>Payment month</span>
                         <input type="month" value={paymentMonth} onChange={(event) => updatePaymentForm(property._id, 'month', event.target.value)} style={inputStyle} />
                       </label>
                       <label style={fieldStyle}>
-                        <span>Provider</span>
-                        <select value={draft.provider} onChange={(event) => updatePaymentForm(property._id, 'provider', event.target.value)} style={inputStyle}>
+                        <span>Payment method</span>
+                        <select value={selectedPaymentMethod} onChange={(event) => updatePaymentForm(property._id, 'paymentMethod', event.target.value)} style={inputStyle}>
                           <option value="bKash">bKash</option>
                           <option value="Nagad">Nagad</option>
                           <option value="Rocket">Rocket</option>
-                          <option value="Other">Other</option>
+                          <option value="Card">Card</option>
                         </select>
                       </label>
-                      <label style={fieldStyle}>
-                        <span>Transaction ID</span>
-                        <input value={draft.transactionId} onChange={(event) => updatePaymentForm(property._id, 'transactionId', event.target.value)} style={inputStyle} placeholder="Txn ID" />
-                      </label>
-                      <button type="button" onClick={() => submitTenantPaymentFromDashboard(property._id, property.monthlyRentPerSeat, seats)} style={ctaButtonStyle}>Submit monthly payment</button>
+                      {payment?.assistant?.flags?.length > 0 ? <p style={overdueTextStyle}>Assistant: {payment.assistant.flags.join(' ')}</p> : null}
+                      <button
+                        type="button"
+                        onClick={() => submitTenantPaymentFromDashboard(property._id, property.monthlyRentPerSeat, seats)}
+                        style={ctaButtonStyle}
+                        disabled={isRedirectingToGateway}
+                      >
+                        {isRedirectingToGateway ? 'Redirecting to SSL...' : 'Pay with SSLCommerz'}
+                      </button>
                     </>
                   )}
                 </div>
@@ -569,6 +636,31 @@ const DashboardPage = () => {
                 </div>
               ))
             ) : <p style={mutedTextStyle}>No reminder items for this month.</p>}
+          </article>
+
+          <article style={panelStyle}>
+            <h2 style={panelTitleStyle}>Contact admin or send feedback</h2>
+            <p style={smallTextStyle}>Need help with seat booking or payments? Send your message directly to admin.</p>
+            <label style={fieldStyle}>
+              <span>Topic</span>
+              <select value={quickFeedback.topic} onChange={(event) => setQuickFeedback((prev) => ({ ...prev, topic: event.target.value }))} style={inputStyle}>
+                <option value="Feedback">Feedback</option>
+                <option value="General Inquiry">General Inquiry</option>
+                <option value="Technical Support">Technical Support</option>
+                <option value="Partnership">Partnership</option>
+                <option value="Complaint">Complaint</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <label style={fieldStyle}>
+              <span>Phone (optional)</span>
+              <input value={quickFeedback.phone} onChange={(event) => setQuickFeedback((prev) => ({ ...prev, phone: event.target.value }))} style={inputStyle} placeholder="Your phone number" />
+            </label>
+            <label style={fieldStyle}>
+              <span>Message</span>
+              <textarea value={quickFeedback.message} onChange={(event) => setQuickFeedback((prev) => ({ ...prev, message: event.target.value }))} style={textareaStyle} rows={4} placeholder="Write your issue or feedback" />
+            </label>
+            <button type="button" onClick={submitQuickFeedback} style={ctaButtonStyle} disabled={submittingFeedback}>{submittingFeedback ? 'Sending...' : 'Send to admin'}</button>
           </article>
         </section>
       )}
@@ -595,12 +687,37 @@ const mutedTextStyle = { color: 'rgba(255,255,255,0.66)' };
 const actionRowStyle = { display: 'flex', gap: '8px', flexWrap: 'wrap' };
 const fieldStyle = { display: 'grid', gap: '8px', marginTop: '10px', color: 'rgba(255,255,255,0.82)' };
 const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(8,12,18,0.78)', color: '#fff' };
+const textareaStyle = { width: '100%', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(8,12,18,0.78)', color: '#fff', resize: 'vertical', minHeight: '110px' };
 const listBlockStyle = { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' };
 const alertTextStyle = { marginTop: '10px', padding: '10px 12px', borderRadius: '12px', background: 'rgba(255, 209, 102, 0.12)', color: '#ffd166', border: '1px solid rgba(255, 209, 102, 0.35)' };
 const ctaButtonStyle = { marginTop: '12px', border: '0', padding: '10px 12px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', color: '#09111b', fontWeight: 700 };
 const approveButtonStyle = { border: '0', padding: '8px 12px', borderRadius: '999px', background: 'rgba(56,161,105,0.2)', color: '#8ff0b4', fontWeight: 700 };
 const rejectButtonStyle = { border: '0', padding: '8px 12px', borderRadius: '999px', background: 'rgba(229,62,62,0.2)', color: '#ff9b9b', fontWeight: 700 };
 const overdueTextStyle = { margin: '4px 0 0', color: '#ff9b9b', fontSize: '0.92rem' };
+const paymentJourneyStyle = { marginTop: '8px', display: 'grid', gap: '6px' };
+const paymentStepStyle = (done) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '7px 10px',
+  borderRadius: '10px',
+  border: done ? '1px solid rgba(56,161,105,0.55)' : '1px solid rgba(255,255,255,0.12)',
+  background: done ? 'rgba(56,161,105,0.18)' : 'rgba(255,255,255,0.03)',
+  color: done ? '#a7f3c3' : 'rgba(255,255,255,0.78)',
+  fontSize: '0.86rem',
+});
+const paymentStepIndexStyle = (done) => ({
+  width: '18px',
+  height: '18px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: '999px',
+  fontSize: '0.72rem',
+  fontWeight: 700,
+  color: done ? '#0f2a1c' : '#f6f1e8',
+  background: done ? '#8ff0b4' : 'rgba(255,255,255,0.2)',
+});
 const badgeStyle = (status) => ({
   padding: '8px 10px',
   borderRadius: '999px',

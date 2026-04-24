@@ -1,8 +1,10 @@
-const User = require('../models/User'); // User model
 const jwt = require('jsonwebtoken');    // For generating JWT
 const dotenv = require('dotenv');       // To access JWT_SECRET from .env
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { assessDocumentVerification } = require('../utils/propertyIntelligence');
+const { hasPostgresDatabase } = require('../utils/dbAdapter');
+const getDbClient = require('../config/dbClient');
 
 dotenv.config({ path: '../.env' }); // Ensure .env from backend root is loaded if not already
 
@@ -22,6 +24,117 @@ const buildUsername = (fullName, email) => {
   const slug = seed.replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 24) || 'tenant';
   return `${slug}.${Date.now().toString(36).slice(-4)}`;
 };
+
+const postgresModeEnabled = () => hasPostgresDatabase();
+
+const roleToDbEnum = (role) => String(role || '').replace(/\s+/g, '_');
+
+const dbEnumToRole = (role) => {
+  const normalized = String(role || '');
+  const roleMap = {
+    Tenant: 'Tenant',
+    Landlord: 'Landlord',
+    Admin: 'Admin',
+    Content_Creator: 'Content Creator',
+    User: 'User',
+    Owner: 'Owner',
+  };
+
+  return roleMap[normalized] || normalized.replace(/_/g, ' ');
+};
+
+const verificationTypeToDbEnum = (verificationType) => String(verificationType || 'Student ID').replace(/\s+/g, '_');
+
+const dbEnumToVerificationType = (verificationType) => {
+  const typeMap = {
+    Student_ID: 'Student ID',
+    NID: 'NID',
+    Passport: 'Passport',
+    Other: 'Other',
+  };
+
+  const normalized = String(verificationType || 'Student_ID');
+  return typeMap[normalized] || normalized.replace(/_/g, ' ');
+};
+
+const mapDbUser = (user) => {
+  if (!user) return null;
+
+  return {
+    _id: user.id,
+    id: user.id,
+    username: user.username,
+    fullName: user.fullName,
+    email: user.email,
+    phoneNumber: user.phoneNumber,
+    role: dbEnumToRole(user.role),
+    isVerified: user.isVerified,
+    verificationStatus: user.verificationStatus,
+    verificationType: dbEnumToVerificationType(user.verificationType),
+    verificationDocumentUrl: user.verificationDocumentUrl,
+    verificationToken: user.verificationToken,
+    verificationTokenExpires: user.verificationTokenExpires,
+    passwordResetToken: user.passwordResetToken,
+    passwordResetExpires: user.passwordResetExpires,
+    passwordResetOtp: user.passwordResetOtp,
+    passwordResetOtpExpires: user.passwordResetOtpExpires,
+    passwordResetOtpRequestedAt: user.passwordResetOtpRequestedAt,
+    passwordResetOtpRequestCount: user.passwordResetOtpRequestCount,
+    passwordResetOtpWindowStartedAt: user.passwordResetOtpWindowStartedAt,
+    profileSummary: user.profileSummary,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+};
+
+const buildDbUserSelect = (includeSensitive = false) => ({
+  id: true,
+  username: true,
+  fullName: true,
+  email: true,
+  phoneNumber: true,
+  password: includeSensitive,
+  role: true,
+  isVerified: true,
+  verificationStatus: true,
+  verificationType: true,
+  verificationDocumentUrl: true,
+  verificationToken: includeSensitive,
+  verificationTokenExpires: includeSensitive,
+  passwordResetToken: includeSensitive,
+  passwordResetExpires: includeSensitive,
+  passwordResetOtp: includeSensitive,
+  passwordResetOtpExpires: includeSensitive,
+  passwordResetOtpRequestedAt: includeSensitive,
+  passwordResetOtpRequestCount: true,
+  passwordResetOtpWindowStartedAt: includeSensitive,
+  profileSummary: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+const findDbUserByIdentifier = async (identifier, includeSensitive = false) => {
+  const db = getDbClient();
+  return db.user.findFirst({
+    where: {
+      OR: [
+        { email: identifier },
+        { username: identifier },
+        { phoneNumber: identifier },
+      ],
+    },
+    select: buildDbUserSelect(includeSensitive),
+  });
+};
+
+const hashPassword = async (password) => {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(password, salt);
+};
+
+const createDbPasswordResetToken = () => crypto.randomBytes(20).toString('hex');
+
+const createDbVerificationToken = () => crypto.randomBytes(20).toString('hex');
 
 // --- Helper function to generate JWT ---
 const generateToken = (userId, userRole) => {
@@ -112,6 +225,46 @@ const issuePasswordResetOtp = async (user) => {
   return { blocked: false };
 };
 
+const issuePasswordResetOtpDb = async (user) => {
+  const throttle = getOtpThrottleState(user);
+
+  if (throttle.requestCount >= OTP_MAX_REQUESTS_PER_WINDOW) {
+    return {
+      blocked: true,
+      statusCode: 429,
+      message: 'Too many OTP requests. Please try again in a few minutes.',
+    };
+  }
+
+  if (throttle.retryAfterMs > 0) {
+    return {
+      blocked: true,
+      statusCode: 429,
+      message: `Please wait ${Math.ceil(throttle.retryAfterMs / 1000)} seconds before requesting another OTP.`,
+    };
+  }
+
+  const otp = generatePasswordResetOtp();
+  const db = getDbClient();
+
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetOtp: crypto.createHash('sha256').update(otp).digest('hex'),
+      passwordResetOtpExpires: new Date(throttle.now + OTP_EXPIRES_MS),
+      passwordResetOtpRequestedAt: new Date(throttle.now),
+      passwordResetOtpRequestCount: throttle.requestCount + 1,
+      passwordResetOtpWindowStartedAt: new Date(throttle.windowStart),
+      passwordResetToken: null,
+      passwordResetExpires: null,
+    },
+  });
+
+  await sendPasswordResetOtpEmail(user.email, otp);
+
+  return { blocked: false };
+};
+
 // --- Controller for User Registration ---
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -119,6 +272,87 @@ const issuePasswordResetOtp = async (user) => {
 exports.registerUser = async (req, res, next) => {
   // Input validation will be handled by middleware before this controller is reached
   const { username, fullName, email, password, role, phoneNumber, verificationType, verificationDocumentUrl } = req.body;
+
+  if (postgresModeEnabled()) {
+    try {
+      const db = getDbClient();
+      const normalizedRole = role || 'Tenant';
+
+      if (!['Tenant', 'Landlord'].includes(normalizedRole)) {
+        return res.status(400).json({ success: false, message: 'Only Tenant or Landlord registration is allowed.' });
+      }
+
+      if (normalizedRole === 'Landlord' && verificationType !== 'NID') {
+        return res.status(400).json({ success: false, message: 'Landlord registration requires NID verification.' });
+      }
+
+      if (normalizedRole === 'Tenant' && !['Student ID', 'NID'].includes(verificationType || 'Student ID')) {
+        return res.status(400).json({ success: false, message: 'Tenant registration requires Student ID or NID verification.' });
+      }
+
+      if (!verificationDocumentUrl) {
+        return res.status(400).json({ success: false, message: 'Verification document upload is required.' });
+      }
+
+      const existingUserByEmail = await db.user.findUnique({ where: { email } });
+      if (existingUserByEmail) {
+        return res.status(400).json({ success: false, message: 'User already exists with this email' });
+      }
+
+      const resolvedUsername = username || buildUsername(fullName, email);
+      const existingUserByUsername = await db.user.findFirst({ where: { username: resolvedUsername } });
+      if (existingUserByUsername) {
+        return res.status(400).json({ success: false, message: 'Username is already taken' });
+      }
+
+      if (phoneNumber) {
+        const existingUserByPhone = await db.user.findFirst({ where: { phoneNumber } });
+        if (existingUserByPhone) {
+          return res.status(400).json({ success: false, message: 'Phone number is already registered' });
+        }
+      }
+
+      const hashedPassword = await hashPassword(password);
+      const newUser = await db.user.create({
+        data: {
+          username: resolvedUsername,
+          fullName: fullName || username || resolvedUsername,
+          email,
+          password: hashedPassword,
+          phoneNumber: phoneNumber || null,
+          role: roleToDbEnum(normalizedRole),
+          verificationType: verificationTypeToDbEnum(verificationType || 'Student ID'),
+          verificationDocumentUrl,
+          verificationStatus: 'Pending',
+          isVerified: false,
+        },
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Registration submitted successfully. Please wait for admin verification approval before login.',
+        user: {
+          id: newUser.id,
+          username: newUser.username,
+          fullName: newUser.fullName,
+          email: newUser.email,
+          phoneNumber: newUser.phoneNumber,
+          role: normalizedRole,
+          verificationStatus: newUser.verificationStatus,
+        },
+      });
+    } catch (error) {
+      console.error('Registration Error (Db):', error);
+      if (error.code === 'P2002') {
+        return res.status(400).json({ success: false, message: 'A unique field value already exists.' });
+      }
+      if (error.message?.includes('Validation')) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+      next(error);
+      return;
+    }
+  }
 
   try {
     const normalizedRole = role || 'Tenant';
@@ -203,6 +437,95 @@ exports.registerUser = async (req, res, next) => {
 // @access  Public
 exports.loginUser = async (req, res, next) => {
   const { email, password, emailOrUsername, role } = req.body;
+
+  if (postgresModeEnabled()) {
+    try {
+      if (!(email || emailOrUsername) || !password) {
+        return res.status(400).json({ success: false, message: 'Please provide email (or username) and password' });
+      }
+
+      const requestedRole = role || null;
+      const identifier = (emailOrUsername || email || '').trim();
+
+      if (requestedRole === 'Admin') {
+        if (identifier !== SYSTEM_ADMIN_USER_ID || password !== SYSTEM_ADMIN_PASSWORD) {
+          return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
+        }
+
+        const token = generateToken(SYSTEM_ADMIN_TOKEN_SUBJECT, 'Admin');
+        return res.status(200).json({
+          success: true,
+          message: 'Login successful',
+          token,
+          user: {
+            id: SYSTEM_ADMIN_TOKEN_SUBJECT,
+            username: SYSTEM_ADMIN_USER_ID,
+            fullName: 'System Admin',
+            email: `${SYSTEM_ADMIN_USER_ID}@system.local`,
+            role: 'Admin',
+            isVerified: true,
+            verificationStatus: 'Verified',
+            verificationType: 'NID',
+          },
+        });
+      }
+
+      const db = getDbClient();
+      const user = email
+        ? await db.user.findUnique({ where: { email }, select: buildDbUserSelect(true) })
+        : await db.user.findFirst({
+            where: {
+              OR: [{ email: emailOrUsername }, { username: emailOrUsername }, { phoneNumber: emailOrUsername }],
+            },
+            select: buildDbUserSelect(true),
+          });
+
+      if (!user) {
+        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      }
+
+      const normalizedRole = dbEnumToRole(user.role);
+      if (requestedRole && requestedRole !== normalizedRole) {
+        return res.status(403).json({ success: false, message: `This account is not registered as ${requestedRole}.` });
+      }
+
+      if (['Tenant', 'Landlord'].includes(normalizedRole)) {
+        const currentVerificationStatus = user.verificationStatus || (user.isVerified ? 'Verified' : 'Pending');
+
+        if (currentVerificationStatus !== 'Verified' || !user.isVerified) {
+          const rejectionMessage = currentVerificationStatus === 'Rejected'
+            ? 'Your account verification was rejected by admin. Please contact support.'
+            : 'Your registration is pending admin verification approval. Please try again later.';
+
+          return res.status(403).json({ success: false, message: rejectionMessage });
+        }
+      }
+
+      const token = generateToken(user.id, normalizedRole);
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        token,
+        user: {
+          id: user.id,
+          username: user.username,
+          fullName: user.fullName,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          role: normalizedRole,
+        },
+      });
+    } catch (error) {
+      console.error('Login Error (Db):', error);
+      next(error);
+      return;
+    }
+  }
 
   try {
     // 1. Check if email and password are provided (basic check, validator middleware does more)
@@ -317,6 +640,28 @@ exports.forgotPassword = async (req, res, next) => {
   }
 
   try {
+    if (postgresModeEnabled()) {
+      const db = getDbClient();
+      const user = await db.user.findUnique({ where: { email }, select: buildDbUserSelect(true) });
+
+      if (!user) {
+        return res.status(200).json({ success: true, message: PASSWORD_RESET_GENERIC_MESSAGE });
+      }
+
+      try {
+        const otpResult = await issuePasswordResetOtpDb(user);
+
+        if (otpResult.blocked) {
+          return res.status(otpResult.statusCode).json({ success: false, message: otpResult.message });
+        }
+
+        return res.status(200).json({ success: true, message: PASSWORD_RESET_GENERIC_MESSAGE });
+      } catch (emailError) {
+        console.error('Password Reset Email Sending Error (Db):', emailError);
+        return res.status(200).json({ success: true, message: `${PASSWORD_RESET_GENERIC_MESSAGE} (Email sending may have issues)` });
+      }
+    }
+
     const user = await User.findOne({ email });
 
     // IMPORTANT: For security, always send a positive-sounding message,
@@ -363,6 +708,28 @@ exports.resendPasswordOtp = async (req, res, next) => {
   }
 
   try {
+    if (postgresModeEnabled()) {
+      const db = getDbClient();
+      const user = await db.user.findUnique({ where: { email }, select: buildDbUserSelect(true) });
+
+      if (!user) {
+        return res.status(200).json({ success: true, message: PASSWORD_RESET_GENERIC_MESSAGE });
+      }
+
+      try {
+        const otpResult = await issuePasswordResetOtpDb(user);
+
+        if (otpResult.blocked) {
+          return res.status(otpResult.statusCode).json({ success: false, message: otpResult.message });
+        }
+
+        return res.status(200).json({ success: true, message: PASSWORD_RESET_GENERIC_MESSAGE });
+      } catch (emailError) {
+        console.error('Resend Password OTP Email Error (Db):', emailError);
+        return res.status(200).json({ success: true, message: `${PASSWORD_RESET_GENERIC_MESSAGE} (Email sending may have issues)` });
+      }
+    }
+
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -393,6 +760,65 @@ exports.resendPasswordOtp = async (req, res, next) => {
 // @access  Public
 exports.resetPassword = async (req, res, next) => {
   try {
+    if (postgresModeEnabled()) {
+      const db = getDbClient();
+      let user = null;
+
+      if (req.body.email && req.body.otp) {
+        const hashedOtp = crypto.createHash('sha256').update(req.body.otp).digest('hex');
+        user = await db.user.findFirst({
+          where: {
+            email: req.body.email,
+            passwordResetOtp: hashedOtp,
+            passwordResetOtpExpires: { gt: new Date() },
+          },
+          select: buildDbUserSelect(true),
+        });
+      } else if (req.params.token) {
+        const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+        user = await db.user.findFirst({
+          where: {
+            passwordResetToken: hashedToken,
+            passwordResetExpires: { gt: new Date() },
+          },
+          select: buildDbUserSelect(true),
+        });
+      }
+
+      if (!user) {
+        return res.status(400).json({ success: false, message: req.body.otp ? 'OTP is invalid or has expired.' : 'Password reset token is invalid or has expired.' });
+      }
+
+      const hashedPassword = await hashPassword(req.body.newPassword);
+      await db.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+          passwordResetOtp: null,
+          passwordResetOtpExpires: null,
+          passwordResetOtpRequestedAt: null,
+          passwordResetOtpRequestCount: 0,
+          passwordResetOtpWindowStartedAt: null,
+        },
+      });
+
+      const newToken = generateToken(user.id, dbEnumToRole(user.role));
+
+      return res.status(200).json({
+        success: true,
+        message: 'Password has been reset successfully. You can now log in.',
+        token: newToken,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: dbEnumToRole(user.role),
+        },
+      });
+    }
+
     let user = null;
 
     if (req.body.email && req.body.otp) {
@@ -454,6 +880,63 @@ exports.resendVerificationEmail = async (req, res, next) => {
     const { email } = req.body;
 
     try {
+    if (postgresModeEnabled()) {
+      const db = getDbClient();
+      const user = await db.user.findUnique({ where: { email }, select: buildDbUserSelect(true) });
+
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found.' });
+      }
+
+      if (user.isVerified) {
+        return res.status(400).json({ success: false, message: 'Email is already verified.' });
+      }
+
+      const verificationToken = createDbVerificationToken();
+      const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+
+      await db.user.update({
+        where: { id: user.id },
+        data: {
+          verificationToken: hashedToken,
+          verificationTokenExpires: new Date(Date.now() + 10 * 60 * 1000),
+        },
+      });
+
+      const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email/${verificationToken}`;
+
+      const resendEmailMessage = `
+        <h2>New Email Verification Link for Your Account</h2>
+        <p>You requested a new email verification link for your To-Let Globe account.</p>
+        <p>Please click the link below to verify your email address:</p>
+        <p><a href="${verificationUrl}" target="_blank">Verify My Email Address</a></p>
+        <p>This link is valid for 10 minutes.</p>
+        <p>If you did not request this, please ignore this email.</p>
+      `;
+
+      try {
+        await sendEmail({
+          email: user.email,
+          subject: 'New Email Verification Link for Your Account',
+          html: resendEmailMessage,
+          message: `Please verify your email by clicking on this link: ${verificationUrl}`,
+        });
+        console.log(`New Email Verification URL sent to ${user.email}: ${verificationUrl}`);
+      } catch (emailError) {
+        console.error('Error sending verification email (Db):', emailError);
+        await db.user.update({
+          where: { id: user.id },
+          data: {
+            verificationToken: null,
+            verificationTokenExpires: null,
+          },
+        });
+        return next(new Error('Failed to send verification email. Please try again later.'));
+      }
+
+      return res.status(200).json({ success: true, message: 'New verification email sent. Please check your inbox.' });
+    }
+
         const user = await User.findOne({ email });
 
         if (!user) {
@@ -569,6 +1052,28 @@ exports.getCurrentUser = async (req, res, next) => {
 // @access  Private/Admin
 exports.getPendingVerifications = async (req, res, next) => {
   try {
+    if (postgresModeEnabled()) {
+      const db = getDbClient();
+      const users = await db.user.findMany({
+        where: {
+          verificationStatus: 'Pending',
+          role: { in: ['Tenant', 'Landlord'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const enrichedUsers = users.map((user) => ({
+        ...mapDbUser(user),
+        verificationInsights: assessDocumentVerification({
+          url: user.verificationDocumentUrl,
+          verificationType: dbEnumToVerificationType(user.verificationType),
+          role: dbEnumToRole(user.role),
+        }),
+      }));
+
+      return res.status(200).json({ success: true, users: enrichedUsers });
+    }
+
     const users = await User.find({ verificationStatus: 'Pending', role: { $in: ['Tenant', 'Landlord'] } })
       .select('fullName username email phoneNumber role verificationType verificationDocumentUrl verificationStatus createdAt')
       .sort({ createdAt: -1 });
@@ -599,6 +1104,33 @@ exports.reviewUserVerification = async (req, res, next) => {
     const { status } = req.body;
     if (!['Verified', 'Rejected'].includes(status)) {
       return res.status(400).json({ success: false, message: 'Status must be Verified or Rejected.' });
+    }
+
+    if (postgresModeEnabled()) {
+      const db = getDbClient();
+      const user = await db.user.findUnique({ where: { id: String(req.params.userId) } });
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found.' });
+      }
+
+      const updatedUser = await db.user.update({
+        where: { id: user.id },
+        data: {
+          verificationStatus: status,
+          isVerified: status === 'Verified',
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Verification ${status.toLowerCase()} successfully.`,
+        user: {
+          id: updatedUser.id,
+          role: dbEnumToRole(updatedUser.role),
+          verificationStatus: updatedUser.verificationStatus,
+          isVerified: updatedUser.isVerified,
+        },
+      });
     }
 
     const user = await User.findById(req.params.userId);

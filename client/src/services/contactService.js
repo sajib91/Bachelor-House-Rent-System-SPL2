@@ -17,6 +17,16 @@ const contactService = {
             const response = await api.post('/contact', formData);
             return response.data;
         },
+
+    getAdminMessages: async () => {
+            const response = await api.get('/contact/admin/messages');
+            return response.data;
+        },
+
+    updateAdminMessage: async (messageId, payload) => {
+            const response = await api.patch(`/contact/admin/messages/${messageId}`, payload);
+            return response.data;
+        },
     };
 
 export default contactService;

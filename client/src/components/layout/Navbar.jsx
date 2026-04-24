@@ -143,9 +143,11 @@ const Navbar = () => {
               Listing Reports
             </NavLink>
           )}
-          <NavLink to="/contact" style={linkStyle} onClick={toggleMenu}>
-            Contact
-          </NavLink>
+          {(!isAuthenticated || user?.role !== 'Admin') && (
+            <NavLink to="/contact" style={linkStyle} onClick={toggleMenu}>
+              Contact
+            </NavLink>
+          )}
           {isAuthenticated ? (
             <button type="button" onClick={handleLogout} style={styles.logoutButton}>
               Logout

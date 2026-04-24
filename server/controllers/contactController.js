@@ -1,25 +1,26 @@
 // backend/controllers/contactController.js
-const Contact = require('../models/Contact');
 const sendEmail = require('../utils/emailService'); // Re-use the existing sendEmail utility
+const getDbClient = require('../config/dbClient');
 
 // @desc    Submit a contact form
 // @route   POST /api/contact
 // @access  Public
 exports.submitContactForm = async (req, res, next) => {
     const { name, email, phone, topic, message } = req.body;
+    const db = getDbClient();
 
     try {
-        // Create new contact entry in DB
-        // Mongoose will handle phone: undefined -> default: null
-        const contactEntry = await Contact.create({
+        const contactEntry = await db.contact.create({
+            data: {
             name,
             email,
-            phone, // Pass directly; if undefined, schema default will apply
+            phone: phone || null,
             topic,
             message
+            },
         });
 
-        console.log('Contact message saved to DB with ID:', contactEntry._id); // Log for verification
+        console.log('Contact message saved to DB with ID:', contactEntry.id); // Log for verification
 
         // Send confirmation email to the user
         const userEmailContent = `
@@ -59,7 +60,7 @@ exports.submitContactForm = async (req, res, next) => {
                     ${phone ? `<li><strong>Phone:</strong> ${phone}</li>` : ''}
                     <li><strong>Topic:</strong> ${topic}</li>
                     <li><strong>Message:</strong> ${message}</li>
-                    <li><strong>Message ID:</strong> ${contactEntry._id}</li>
+                    <li><strong>Message ID:</strong> ${contactEntry.id}</li>
                     <li><strong>Submitted At:</strong> ${contactEntry.createdAt.toLocaleString()}</li>
                 </ul>
                 <p>You can view this message in your admin panel once implemented.</p>
@@ -79,20 +80,67 @@ exports.submitContactForm = async (req, res, next) => {
         res.status(201).json({
             success: true,
             message: 'Contact form submitted successfully!',
-             contactId: contactEntry._id // Include the ID for reference
+            contactId: contactEntry.id, // Include the ID for reference
         });
 
     } catch (error) {
         console.error('Error submitting contact form:', error);
-        // Handle Mongoose validation errors specifically
-        if (error.name === 'ValidationError') {
-            const errors = Object.values(error.errors).map(err => err.message);
-            return res.status(400).json({
-                success: false,
-                message: 'Validation failed',
-                errors: errors
-            });
-        }
         next(error); // Pass other errors to your centralized error handler
+    }
+};
+
+// @desc    Get all contact messages for admin inbox
+// @route   GET /api/contact/admin/messages
+// @access  Private/Admin
+exports.getAdminContactMessages = async (req, res, next) => {
+    try {
+        const db = getDbClient();
+        const messages = await db.contact.findMany({
+            orderBy: { createdAt: 'desc' },
+        });
+
+        res.status(200).json({
+            success: true,
+            count: messages.length,
+            messages,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Update contact message status and admin note
+// @route   PATCH /api/contact/admin/messages/:id
+// @access  Private/Admin
+exports.updateAdminContactMessage = async (req, res, next) => {
+    const { id } = req.params;
+    const { status, adminNote } = req.body;
+    const db = getDbClient();
+
+    try {
+        const message = await db.contact.findUnique({ where: { id } });
+
+        if (!message) {
+            return res.status(404).json({ success: false, message: 'Contact message not found.' });
+        }
+
+        const nextStatus = status || message.status;
+        const updated = await db.contact.update({
+            where: { id },
+            data: {
+                status: nextStatus,
+                adminNote: typeof adminNote === 'string' ? adminNote.trim() : message.adminNote,
+                resolvedAt: nextStatus === 'Resolved' ? new Date() : null,
+                resolvedBy: nextStatus === 'Resolved' ? (req.user?.username || req.user?.email || 'admin') : null,
+            },
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Contact message updated successfully.',
+            contact: updated,
+        });
+    } catch (error) {
+        next(error);
     }
 };

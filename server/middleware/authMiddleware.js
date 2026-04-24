@@ -1,7 +1,7 @@
 //backend/middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // To fetch user details if needed, e.g., to check if user still exists
 const dotenv = require('dotenv');
+const getDbClient = require('../config/dbClient');
 
 dotenv.config({ path: '../.env' });
 
@@ -33,15 +33,35 @@ exports.protect = async (req, res, next) => {
         return next();
       }
 
-      // Attach user object to the request (excluding password) including their role
-      // This makes req.user available in subsequent protected route handlers
-      req.user = await User.findById(decoded.id).select('-password'); // Select everything except password
+      const db = getDbClient();
+      const user = await db.user.findUnique({
+        where: { id: String(decoded.id) },
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          email: true,
+          phoneNumber: true,
+          role: true,
+          isVerified: true,
+          verificationStatus: true,
+          verificationType: true,
+          verificationDocumentUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
 
-      if (!req.user) {
-          // User belonging to token no longer exists
-          return res.status(401).json({ success: false, message: 'Not authorized, user not found' });
+      if (!user) {
+        return res.status(401).json({ success: false, message: 'Not authorized, user not found' });
       }
-      
+
+      req.user = {
+        _id: user.id,
+        ...user,
+        role: String(user.role || '').replace(/_/g, ' '),
+      };
+
       next(); // Proceed to the next middleware or route handler
     } catch (error) {
       console.error('Token verification failed:', error.message);

@@ -2,7 +2,9 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'react-toastify';
+import { Link } from 'react-router-dom';
 import contactService from '../../services/contactService';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Import InputField for consistent input styling
 import InputField from '../../components/common/InputField/InputField';
@@ -18,6 +20,7 @@ import contactStyles from './ContactUsPage.module.css'; // <--- NEW IMPORT
 import { FaUserAlt, FaEnvelope, FaPhone, FaTag, FaEdit } from 'react-icons/fa';
 
 const ContactUsPage = () => {
+    const { user } = useAuth();
     const { register, handleSubmit, reset, formState: { errors } } = useForm();
 
     const onSubmit = async (data) => {
@@ -26,9 +29,30 @@ const ContactUsPage = () => {
             toast.success('Your message has been sent successfully!');
             reset(); // Clear the form
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to send message.');
+            const backendErrors = error.response?.data?.errors;
+            const detailedMessage = Array.isArray(backendErrors)
+                ? backendErrors[0]?.message || backendErrors[0]
+                : null;
+            toast.error(detailedMessage || error.response?.data?.message || 'Failed to send message.');
         }
     };
+
+    if (user?.role === 'Admin') {
+        return (
+            <div className={contactStyles['contact-us-container']}>
+                <h1 className="main-heading">Admin Contact Handling</h1>
+                <p className="subheading">Admins receive and resolve user issues from the admin dashboard inbox.</p>
+                <div className={contactStyles['contact-form-wrapper']}>
+                    <p className={contactStyles.privacyStatement} style={{ marginBottom: '20px' }}>
+                        To avoid admin self-contact, the public contact form is disabled for admin accounts.
+                    </p>
+                    <Link to="/admin" className={authStyles.submitButtonFullWidth} style={{ textAlign: 'center', textDecoration: 'none' }}>
+                        Go to Admin Inbox
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className={contactStyles['contact-us-container']}> {/* New wider page container */}
@@ -89,6 +113,8 @@ const ContactUsPage = () => {
                             <option value="General Inquiry">General Inquiry</option>
                             <option value="Technical Support">Technical Support</option>
                             <option value="Partnership">Partnership</option>
+                            <option value="Feedback">Feedback</option>
+                            <option value="Complaint">Complaint</option>
                             <option value="Other">Other</option>
                         </select>
                         {errors.topic && <p className={authStyles.errorMessage}>{errors.topic.message}</p>}

@@ -21,6 +21,7 @@ const PropertyDetailsPage = lazy(() => import('./pages/Property/PropertyDetailsP
 const AddPropertyPage = lazy(() => import('./pages/Property/AddPropertyPage.jsx'));
 const LandlordReportsPage = lazy(() => import('./pages/Property/LandlordReportsPage.jsx'));
 const PropertyIntelligenceReportPage = lazy(() => import('./pages/Property/PropertyIntelligenceReportPage.jsx'));
+const PaymentSlipPage = lazy(() => import('./pages/Property/PaymentSlipPage.jsx'));
 
 const LoadingFallback = () => <div style={{ textAlign: 'center', color: 'var(--color-text-primary)', marginTop: '60px', fontSize: '1.5rem' }}>Loading Page...</div>;
 
@@ -50,6 +51,7 @@ function App() {
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} /> {/* Dashboard is protected */}
+            <Route path="/payments/slip/:id/:paymentId" element={<PaymentSlipPage />} />
           </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['Landlord', 'Admin']} />}>

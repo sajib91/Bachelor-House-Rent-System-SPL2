@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import apiClient from '../../services/apiService';
+import contactService from '../../services/contactService';
 
 const AdminPage = () => {
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -9,17 +10,31 @@ const AdminPage = () => {
   const [savingThresholds, setSavingThresholds] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('All');
+  const [contactMessages, setContactMessages] = useState([]);
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactStatusFilter, setContactStatusFilter] = useState('All');
+  const [updatingMessageId, setUpdatingMessageId] = useState('');
+  const [noteDrafts, setNoteDrafts] = useState({});
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersResponse, thresholdResponse] = await Promise.all([
+      const [usersResponse, thresholdResponse, contactResponse] = await Promise.all([
         apiClient.get('/auth/admin/pending-verifications'),
         apiClient.get('/properties/admin/intelligence-thresholds'),
+        contactService.getAdminMessages(),
       ]);
 
       setPendingUsers(usersResponse.data.users || []);
       setThresholds(thresholdResponse.data.thresholds || null);
+      const messages = contactResponse.messages || [];
+      setContactMessages(messages);
+      setNoteDrafts(
+        messages.reduce((accumulator, message) => {
+          accumulator[message._id] = message.adminNote || '';
+          return accumulator;
+        }, {})
+      );
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to load admin approvals.');
     } finally {
@@ -43,6 +58,19 @@ const AdminPage = () => {
       return roleMatch && searchMatch;
     });
   }, [pendingUsers, userRoleFilter, userSearch]);
+
+  const filteredContactMessages = useMemo(() => {
+    return contactMessages.filter((message) => {
+      const statusMatch = contactStatusFilter === 'All' || message.status === contactStatusFilter;
+      const searchText = contactSearch.trim().toLowerCase();
+      const searchMatch = !searchText
+        || [message.name, message.email, message.phone, message.topic, message.message, message.adminNote]
+          .filter(Boolean)
+          .some((item) => String(item).toLowerCase().includes(searchText));
+
+      return statusMatch && searchMatch;
+    });
+  }, [contactMessages, contactStatusFilter, contactSearch]);
 
   const reviewUser = async (userId, status) => {
     try {
@@ -76,6 +104,24 @@ const AdminPage = () => {
     } finally {
       setSavingThresholds(false);
     }
+  };
+
+  const updateContactMessage = async (messageId, payload) => {
+    setUpdatingMessageId(messageId);
+    try {
+      const response = await contactService.updateAdminMessage(messageId, payload);
+      toast.success(response.message || 'Contact message updated.');
+      await loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to update contact message.');
+    } finally {
+      setUpdatingMessageId('');
+    }
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return 'N/A';
+    return new Date(value).toLocaleString();
   };
 
   if (loading) {
@@ -167,6 +213,51 @@ const AdminPage = () => {
           ) : <p style={emptyStyle}>Threshold settings unavailable.</p>}
           <button type="button" style={approveStyle} disabled={savingThresholds || !thresholds} onClick={saveThresholds}>{savingThresholds ? 'Saving...' : 'Save Threshold Settings'}</button>
         </article>
+
+        <article style={panelStyle}>
+          <h2 style={panelTitleStyle}>Contact Inbox ({filteredContactMessages.length})</h2>
+          <p style={metaStyle}>Admin can review user-reported problems and mark resolution status.</p>
+          <div style={filtersRowStyle}>
+            <input
+              value={contactSearch}
+              onChange={(event) => setContactSearch(event.target.value)}
+              placeholder="Search name, email, topic or issue"
+              style={inputStyle}
+            />
+            <select value={contactStatusFilter} onChange={(event) => setContactStatusFilter(event.target.value)} style={inputStyle}>
+              <option value="All">All Statuses</option>
+              <option value="Open">Open</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Resolved">Resolved</option>
+            </select>
+          </div>
+
+          {filteredContactMessages.length > 0 ? filteredContactMessages.map((message) => (
+            <div key={message._id} style={itemRowStyle}>
+              <div style={{ flex: 1 }}>
+                <strong>{message.name} ({message.topic})</strong>
+                <p style={metaStyle}>{message.email}{message.phone ? ` · ${message.phone}` : ''}</p>
+                <p style={metaStyle}>Submitted: {formatDateTime(message.createdAt)}</p>
+                <p style={{ marginTop: '8px', marginBottom: '8px' }}>{message.message}</p>
+                <p style={metaStyle}>Status: <span style={statusBadgeStyle(message.status)}>{message.status || 'Open'}</span></p>
+                <p style={metaStyle}>Resolved: {message.resolvedAt ? formatDateTime(message.resolvedAt) : 'Not resolved yet'}</p>
+                <textarea
+                  value={noteDrafts[message._id] || ''}
+                  onChange={(event) => setNoteDrafts((previous) => ({ ...previous, [message._id]: event.target.value }))}
+                  placeholder="Add admin note"
+                  rows={3}
+                  style={textareaStyle}
+                />
+              </div>
+              <div style={actionRowStyle}>
+                <button type="button" style={approveStyle} disabled={updatingMessageId === message._id} onClick={() => updateContactMessage(message._id, { status: 'In Progress' })}>In Progress</button>
+                <button type="button" style={approveStyle} disabled={updatingMessageId === message._id} onClick={() => updateContactMessage(message._id, { status: 'Resolved', adminNote: noteDrafts[message._id] || '' })}>Mark Resolved</button>
+                <button type="button" style={rejectStyle} disabled={updatingMessageId === message._id} onClick={() => updateContactMessage(message._id, { status: 'Open' })}>Reopen</button>
+                <button type="button" style={neutralButtonStyle} disabled={updatingMessageId === message._id} onClick={() => updateContactMessage(message._id, { adminNote: noteDrafts[message._id] || '' })}>Save Note</button>
+              </div>
+            </div>
+          )) : <p style={emptyStyle}>No contact issues found for this filter.</p>}
+        </article>
       </section>
     </div>
   );
@@ -189,6 +280,24 @@ const metaStyle = { margin: '4px 0 0', color: 'rgba(255,255,255,0.68)', fontSize
 const actionRowStyle = { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' };
 const approveStyle = { border: '0', borderRadius: '999px', padding: '9px 12px', background: 'rgba(56,161,105,0.2)', color: '#8ff0b4', fontWeight: 700 };
 const rejectStyle = { border: '0', borderRadius: '999px', padding: '9px 12px', background: 'rgba(229,62,62,0.2)', color: '#ff9b9b', fontWeight: 700 };
+const neutralButtonStyle = { border: '0', borderRadius: '999px', padding: '9px 12px', background: 'rgba(144,205,244,0.2)', color: '#b6dcff', fontWeight: 700 };
+const textareaStyle = { width: '100%', marginTop: '8px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.12)', padding: '10px', background: 'rgba(8,12,18,0.78)', color: '#fff' };
+const statusBadgeStyle = (status) => ({
+  display: 'inline-block',
+  padding: '2px 8px',
+  borderRadius: '999px',
+  marginLeft: '6px',
+  background: status === 'Resolved'
+    ? 'rgba(56,161,105,0.2)'
+    : status === 'In Progress'
+      ? 'rgba(236,201,75,0.2)'
+      : 'rgba(229,62,62,0.2)',
+  color: status === 'Resolved'
+    ? '#8ff0b4'
+    : status === 'In Progress'
+      ? '#ffe899'
+      : '#ffb3b3',
+});
 const emptyStyle = { color: 'rgba(255,255,255,0.66)' };
 const loadingStyle = { minHeight: '50vh', display: 'grid', placeItems: 'center', color: '#fff7e6' };
 

@@ -21,6 +21,15 @@ router.get('/admin/insights', protect, authorizeRoles('Admin'), propertyControll
 router.get('/admin/intelligence-thresholds', protect, authorizeRoles('Admin'), propertyController.getIntelligenceThresholds);
 router.patch('/admin/intelligence-thresholds', protect, authorizeRoles('Admin'), propertyController.updateIntelligenceThresholds);
 
+// SSLCommerz callbacks (public gateway redirects)
+router.post('/payments/ssl/success', propertyController.handleSslPaymentSuccess);
+router.get('/payments/ssl/success', propertyController.handleSslPaymentSuccess);
+router.post('/payments/ssl/fail', propertyController.handleSslPaymentFailure);
+router.get('/payments/ssl/fail', propertyController.handleSslPaymentFailure);
+router.post('/payments/ssl/cancel', propertyController.handleSslPaymentFailure);
+router.get('/payments/ssl/cancel', propertyController.handleSslPaymentFailure);
+router.post('/payments/verify', propertyController.verifyPaymentSlip);
+
 router.get('/:id/quality-assistant', protect, authorizeRoles('Landlord', 'Admin'), propertyController.getListingQualityAssistant);
 router.get('/:id/pricing-recommendation', protect, authorizeRoles('Landlord', 'Admin'), propertyController.getPricingRecommendation);
 // GET a single property by ID
@@ -34,11 +43,14 @@ router.patch('/:id', protect, propertyController.updateProperty);
 
 // Seat request and approval flow
 router.post('/:id/apply', protect, propertyController.applyForSeat);
-router.patch('/:id/applications/:applicationId', protect, authorizeRoles('Landlord', 'Admin'), propertyController.reviewApplication);
+router.patch('/:id/applications/:applicationId', protect, authorizeRoles('Landlord'), propertyController.reviewApplication);
 
 // Monthly rent and in-platform chat
+router.post('/:id/payments/ssl/initiate', protect, authorizeRoles('Tenant'), propertyController.initiateSslRentPayment);
 router.post('/:id/payments', protect, propertyController.addRentPayment);
 router.patch('/:id/payments/:paymentId', protect, authorizeRoles('Landlord', 'Admin'), propertyController.updateRentPaymentStatus);
+router.get('/:id/payments/:paymentId/slip', protect, propertyController.getPaymentSlip);
+router.get('/:id/payments/:paymentId/slip/pdf', protect, propertyController.downloadPaymentSlipPdf);
 router.post('/:id/messages', protect, propertyController.addMessage);
 router.post('/:id/reviews', protect, authorizeRoles('Tenant'), propertyController.addReview);
 

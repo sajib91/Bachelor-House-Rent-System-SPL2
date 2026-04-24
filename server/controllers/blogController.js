@@ -1,6 +1,6 @@
 // backend/controllers/blogController.js
-const Blog = require('../models/Blog');
 const { validationResult } = require('express-validator'); // For input validation
+const getDbClient = require('../config/dbClient');
 
 // @desc    Create a new blog post
 // @route   POST /api/blogs
@@ -14,18 +14,19 @@ exports.createBlog = async (req, res) => {
 
     try {
         const { name, role, title, category, intro, imageUrl, content } = req.body;
+        const db = getDbClient();
 
-        const newBlog = new Blog({
-            name,
-            role,
-            title,
-            category,
-            intro,
-            imageUrl, // This will be the URL after image upload
-            content
+        const blog = await db.blog.create({
+            data: {
+                name,
+                role,
+                title,
+                category,
+                intro,
+                imageUrl: imageUrl || null,
+                content,
+            },
         });
-
-        const blog = await newBlog.save();
         res.status(201).json({ message: 'Blog created successfully', blog });
     } catch (error) {
         console.error(error);
@@ -46,12 +47,16 @@ exports.getBlogs = async (req, res) => {
     }
 
     try {
-        const blogs = await Blog.find()
-                            .sort(sortCriteria)
-                            .skip(skip)
-                            .limit(parseInt(limit));
+        const db = getDbClient();
+        const take = parseInt(limit);
+        const orderBy = sortBy === 'trending'
+            ? [{ likes: 'desc' }, { views: 'desc' }]
+            : [{ createdAt: 'desc' }];
 
-        const totalBlogs = await Blog.countDocuments();
+        const [blogs, totalBlogs] = await Promise.all([
+            db.blog.findMany({ orderBy, skip, take }),
+            db.blog.count(),
+        ]);
 
         res.json({
             blogs,
@@ -70,22 +75,21 @@ exports.getBlogs = async (req, res) => {
 // @access  Public
 exports.getBlogById = async (req, res) => {
     try {
-        const blog = await Blog.findById(req.params.id);
+        const db = getDbClient();
+        const blog = await db.blog.findUnique({ where: { id: req.params.id } });
 
         if (!blog) {
             return res.status(404).json({ message: 'Blog not found' });
         }
 
-        // Increment views on access (optional, but good for "trending")
-        blog.views += 1;
-        await blog.save();
+        const updatedBlog = await db.blog.update({
+            where: { id: blog.id },
+            data: { views: { increment: 1 } },
+        });
 
-        res.json(blog);
+        res.json(updatedBlog);
     } catch (error) {
         console.error(error);
-        if (error.kind === 'ObjectId') {
-            return res.status(404).json({ message: 'Blog not found' });
-        }
         res.status(500).json({ message: 'Server error' });
     }
 };
@@ -95,16 +99,20 @@ exports.getBlogById = async (req, res) => {
 // @access  Public (or Private, depending on if you want logged-in users only)
 exports.likeBlog = async (req, res) => {
     try {
-        const blog = await Blog.findById(req.params.id);
+        const db = getDbClient();
+        const blog = await db.blog.findUnique({ where: { id: req.params.id } });
 
         if (!blog) {
             return res.status(404).json({ message: 'Blog not found' });
         }
 
-        blog.likes += 1;
-        await blog.save();
+        const updated = await db.blog.update({
+            where: { id: blog.id },
+            data: { likes: { increment: 1 } },
+            select: { likes: true },
+        });
 
-        res.json({ message: 'Blog liked successfully', likes: blog.likes });
+        res.json({ message: 'Blog liked successfully', likes: updated.likes });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });

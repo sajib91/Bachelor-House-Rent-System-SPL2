@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import apiClient from '../../services/apiService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,6 +8,7 @@ import { getSocket } from '../../services/socketService';
 const PropertyDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuth();
   const [property, setProperty] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,9 +18,9 @@ const PropertyDetailsPage = () => {
   const [studentIdType, setStudentIdType] = useState('Student ID');
   const [seatsRequested, setSeatsRequested] = useState(1);
   const [message, setMessage] = useState('');
-  const [transactionId, setTransactionId] = useState('');
-  const [paymentProvider, setPaymentProvider] = useState('bKash');
   const [paymentMonth, setPaymentMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [paymentMethod, setPaymentMethod] = useState('bKash');
+  const [isInitiatingPayment, setIsInitiatingPayment] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
@@ -142,11 +143,32 @@ const PropertyDetailsPage = () => {
   const tenantApplication = useMemo(() => (
     (property?.seatApplications || []).find((application) => String(application.tenant?._id || application.tenant) === String(user?.id)) || null
   ), [property?.seatApplications, user?.id]);
-  const canReviewApplications = isAuthenticated && (isLandlordOwner || user?.role === 'Admin');
+  const canReviewApplications = isAuthenticated && isLandlordOwner;
   const canApplyForSeat = isAuthenticated && isTenant && !isLandlordOwner && Number(property?.availableSeats || 0) > 0;
   const canPayRent = isAuthenticated && isTenant && tenantApplication?.status === 'Approved';
   const canChat = isAuthenticated && (isLandlordOwner || isTenant);
   const canReviewProperty = isAuthenticated && isTenant && Boolean(tenantApplication);
+  const selectedMonthPayment = useMemo(() => (
+    (property?.rentPayments || []).find((item) => (
+      String(item.tenant?._id || item.tenant) === String(user?.id)
+      && item.month === paymentMonth
+    )) || null
+  ), [paymentMonth, property?.rentPayments, user?.id]);
+  const paymentJourneySteps = useMemo(() => {
+    const hasApplied = Boolean(tenantApplication);
+    const hasLandlordApproval = tenantApplication?.status === 'Approved';
+    const hasMethodSelected = Boolean(paymentMethod);
+    const hasOtpPinGatewayStep = Boolean(selectedMonthPayment) || isInitiatingPayment;
+    const hasSlipReady = selectedMonthPayment?.status === 'Paid';
+
+    return [
+      { key: 'apply', label: 'Apply seat', done: hasApplied },
+      { key: 'approval', label: 'Landlord approves', done: hasLandlordApproval },
+      { key: 'method', label: 'Select method', done: hasMethodSelected },
+      { key: 'otp', label: 'SSL OTP + PIN', done: hasOtpPinGatewayStep },
+      { key: 'slip', label: 'Slip ready', done: hasSlipReady },
+    ];
+  }, [tenantApplication, paymentMethod, selectedMonthPayment, isInitiatingPayment]);
   const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
 
   const resolveImageUrl = (photoUrl) => {
@@ -197,19 +219,54 @@ const PropertyDetailsPage = () => {
   };
 
   const submitPayment = async () => {
+    setIsInitiatingPayment(true);
     try {
-      const response = await apiClient.post(`/properties/${id}/payments`, {
+      const response = await apiClient.post(`/properties/${id}/payments/ssl/initiate`, {
         month: paymentMonth,
-        provider: paymentProvider,
-        transactionId,
         amount: property?.monthlyRentPerSeat,
+        paymentMethod,
       });
-      toast.success(response.data.message || 'Rent payment submitted.');
-      setTransactionId('');
+
+      const gatewayUrl = response.data?.gatewayUrl;
+      if (!gatewayUrl) {
+        throw new Error('Missing SSL gateway URL.');
+      }
+
+      toast.info('Redirecting to SSL secure payment gateway...');
+      window.location.assign(gatewayUrl);
     } catch (paymentError) {
       toast.error(paymentError.response?.data?.message || 'Unable to submit payment.');
+      setIsInitiatingPayment(false);
     }
   };
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const paymentStatus = query.get('paymentStatus');
+
+    if (!paymentStatus) return;
+
+    if (paymentStatus === 'success') {
+      toast.success('Payment successful. SSL slip is ready.');
+    } else if (paymentStatus === 'cancelled') {
+      toast.info('Payment was cancelled.');
+    } else {
+      toast.error('Payment failed or verification was not completed.');
+    }
+
+    const refresh = async () => {
+      try {
+        const refreshed = await apiClient.get(`/properties/${id}`);
+        setProperty(refreshed.data);
+      } catch (error) {
+        // Keep current data and avoid blocking UI.
+      } finally {
+        setIsInitiatingPayment(false);
+      }
+    };
+
+    refresh();
+  }, [id, location.search]);
 
   const sendMessage = async () => {
     if (!message.trim()) return;
@@ -396,7 +453,7 @@ const PropertyDetailsPage = () => {
           {isTenant ? (
           <article style={panelStyle}>
             <h2 style={panelTitleStyle}>Apply for seat</h2>
-            <p style={bodyTextStyle}>Send a seat request or ask for a roommate match. Only tenants can apply.</p>
+            <p style={bodyTextStyle}>Send a seat request or ask for a roommate match. Only the landlord can approve or reject your request.</p>
             <label style={fieldStyle}>
               <span>Identity type</span>
               <select value={studentIdType} onChange={(event) => setStudentIdType(event.target.value)} style={inputStyle}>
@@ -440,23 +497,42 @@ const PropertyDetailsPage = () => {
               <input type="month" value={paymentMonth} onChange={(event) => setPaymentMonth(event.target.value)} style={inputStyle} />
             </label>
             <label style={fieldStyle}>
-              <span>Provider</span>
-              <select value={paymentProvider} onChange={(event) => setPaymentProvider(event.target.value)} style={inputStyle}>
+              <span>Payment method</span>
+              <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} style={inputStyle}>
                 <option value="bKash">bKash</option>
                 <option value="Nagad">Nagad</option>
                 <option value="Rocket">Rocket</option>
-                <option value="Other">Other</option>
+                <option value="Card">Card</option>
               </select>
             </label>
-            <label style={fieldStyle}>
-              <span>Transaction ID</span>
-              <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} style={inputStyle} placeholder="Txn ID" />
-            </label>
-            <button type="button" onClick={submitPayment} disabled={!canPayRent} style={secondaryButtonStyle}>
-              {canPayRent ? 'Submit payment' : 'Payment unavailable'}
+            <p style={helperTextStyle}>Gateway: SSLCommerz secure checkout. Amount: ৳{property?.monthlyRentPerSeat || 0}</p>
+            <p style={helperTextStyle}>Flow: choose method, enter mobile account number, submit OTP, then PIN. Payment confirmation slip is generated automatically.</p>
+            <div style={paymentJourneyStyle}>
+              {paymentJourneySteps.map((step, index) => (
+                <div key={step.key} style={paymentStepStyle(step.done)}>
+                  <span style={paymentStepIndexStyle(step.done)}>{index + 1}</span>
+                  <span>{step.label}</span>
+                </div>
+              ))}
+            </div>
+            {selectedMonthPayment ? (
+              <div style={paymentStatusCardStyle}>
+                <p style={detailLineStyle}><strong>Status:</strong> {selectedMonthPayment.status}</p>
+                <p style={detailLineStyle}><strong>Provider:</strong> {selectedMonthPayment.provider}</p>
+                <p style={detailLineStyle}><strong>Transaction:</strong> {selectedMonthPayment.transactionId}</p>
+                {selectedMonthPayment.status === 'Paid' ? (
+                  <Link to={`/payments/slip/${id}/${selectedMonthPayment._id}`} style={contactLinkStyle}>View SSL payment slip</Link>
+                ) : null}
+                {selectedMonthPayment.assistant?.flags?.length > 0 ? (
+                  <p style={helperTextStyle}>Assistant: {selectedMonthPayment.assistant.flags.join(' ')}</p>
+                ) : null}
+              </div>
+            ) : null}
+            <button type="button" onClick={submitPayment} disabled={!canPayRent || isInitiatingPayment} style={secondaryButtonStyle}>
+              {canPayRent ? (isInitiatingPayment ? 'Redirecting to SSL...' : 'Pay with SSLCommerz') : 'Payment unavailable'}
             </button>
             {isTenant && tenantApplication?.status !== 'Approved' && (
-              <p style={helperTextStyle}>Payment opens after your seat request is approved.</p>
+              <p style={helperTextStyle}>Payment opens only after landlord approval of your seat request.</p>
             )}
           </article>
 
@@ -532,6 +608,7 @@ const PropertyDetailsPage = () => {
       {canReviewApplications && (
         <section style={{ ...panelStyle, marginTop: '16px' }}>
           <h2 style={panelTitleStyle}>Seat requests</h2>
+          <p style={helperTextStyle}>Landlord decision panel. Admin cannot approve or reject these requests.</p>
           {(property.seatApplications || []).length > 0 ? property.seatApplications.map((application) => (
             <div key={application._id} style={applicationRowStyle}>
               <div>
@@ -604,6 +681,31 @@ const approveButtonStyle = { border: '0', padding: '10px 14px', borderRadius: '9
 const rejectButtonStyle = { border: '0', padding: '10px 14px', borderRadius: '999px', background: 'rgba(229,62,62,0.2)', color: '#ff9b9b', fontWeight: 700 };
 const contactLinkStyle = { display: 'inline-flex', alignItems: 'center', padding: '8px 12px', borderRadius: '999px', border: '1px solid rgba(255,255,255,0.15)', color: '#ffd166', textDecoration: 'none', fontWeight: 700 };
 const reportLinkStyle = { display: 'inline-flex', marginTop: '12px', padding: '10px 14px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', color: '#09111b', textDecoration: 'none', fontWeight: 800 };
+const paymentStatusCardStyle = { marginTop: '10px', padding: '12px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.09)', background: 'rgba(255,255,255,0.03)' };
+const paymentJourneyStyle = { marginTop: '10px', display: 'grid', gap: '8px' };
+const paymentStepStyle = (done) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '8px 10px',
+  borderRadius: '10px',
+  border: done ? '1px solid rgba(56,161,105,0.55)' : '1px solid rgba(255,255,255,0.12)',
+  background: done ? 'rgba(56,161,105,0.18)' : 'rgba(255,255,255,0.03)',
+  color: done ? '#a7f3c3' : 'rgba(255,255,255,0.78)',
+  fontSize: '0.88rem',
+});
+const paymentStepIndexStyle = (done) => ({
+  width: '18px',
+  height: '18px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: '999px',
+  fontSize: '0.72rem',
+  fontWeight: 700,
+  color: done ? '#0f2a1c' : '#f6f1e8',
+  background: done ? '#8ff0b4' : 'rgba(255,255,255,0.2)',
+});
 const footerRowStyle = { marginTop: '18px', display: 'flex', justifyContent: 'start' };
 const backButtonStyle = { border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', color: '#f6f1e8', borderRadius: '999px', padding: '10px 14px', fontWeight: 700 };
 const stateStyle = { minHeight: '50vh', display: 'grid', placeItems: 'center', color: '#fff7e6' };

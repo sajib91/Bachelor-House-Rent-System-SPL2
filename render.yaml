@@ -1,44 +1,31 @@
 services:
   - type: web
-    name: to-let-globe-server
-    runtime: node
-    rootDir: server
+    name: to-let-globe-php-api
+    runtime: php
+    rootDir: php-api
     plan: free
     autoDeploy: true
-    buildCommand: npm ci
-    startCommand: npm start
+    startCommand: php -S 0.0.0.0:$PORT -t public
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: BACKEND_PORT
-        value: "5001"
-      - key: CORS_ALLOW_VERCEL_PREVIEWS
-        value: "true"
-      - key: MONGODB_URI
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_NAME
+        value: "bhms"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
         sync: false
       - key: JWT_SECRET
         sync: false
-      - key: JWT_EXPIRES_IN
-        value: 1h
       - key: FRONTEND_URL
         sync: false
-      - key: CORS_ALLOWED_ORIGINS
+      - key: BACKEND_URL
         sync: false
-      - key: ETHEREAL_HOST
+      - key: API_PUBLIC_URL
         sync: false
-      - key: ETHEREAL_PORT
+      - key: SYSTEM_ADMIN_USER_ID
+        value: "admin"
+      - key: SYSTEM_ADMIN_PASSWORD
         sync: false
-      - key: ETHEREAL_SECURE
-        sync: false
-      - key: ETHEREAL_USER
-        sync: false
-      - key: ETHEREAL_PASS
-        sync: false
-      - key: EMAIL_FROM_NAME
-        value: Bachelor House Rent System
-      - key: EMAIL_FROM_ADDRESS
-        sync: false
-      - key: RATE_LIMIT_WINDOW_MS
-        value: "900000"
-      - key: RATE_LIMIT_MAX_REQUESTS
-        value: "100"

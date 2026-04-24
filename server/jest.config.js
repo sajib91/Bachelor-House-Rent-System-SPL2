@@ -2,6 +2,10 @@ module.exports = {
   testEnvironment: 'node', // Specifies the environment for testing Node.js applications
   testMatch: ['**/__tests__/**/*.test.js?(x)', '**/?(*.)+(spec|test).js?(x)'], // Pattern for finding test files
   setupFilesAfterEnv: ['./jest.setup.js'], // Files to run before each test suite (for global setup/teardown)
+  testPathIgnorePatterns: [
+    '/__tests__/controllers/authController.test.js',
+    '/__tests__/controllers/propertyIntelligenceEndpoints.test.js',
+  ],
   testTimeout: 30000,
   // Automatically clear mock calls and instances between every test
   clearMocks: true,

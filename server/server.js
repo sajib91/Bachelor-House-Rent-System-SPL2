@@ -12,8 +12,7 @@ const contactRoutes = require('./routes/contactRoutes'); // Import the contact r
 const blogRoutes = require('./routes/blogRoutes'); // Import the blog router
 const propertyRoutes = require('./routes/propertyRoutes'); // Import the property router
 const propertyController = require('./controllers/propertyController');
-const Property = require('./models/Property');
-const User = require('./models/User');
+const getDbClient = require('./config/dbClient');
 const uploadRoutes = require('./routes/uploadRoutes'); // Import the upload router
 const { errorHandler } = require('./middleware/errorMiddleware'); // Import the error router
 const rateLimit = require('express-rate-limit'); // Import express rate limit
@@ -24,7 +23,7 @@ const path = require('path'); // For local photo uploads
 // 2. Load Environment Variables
 // This line loads variables from a .env file into process.env
 // Should be done early, especially before database connections or port configurations
-dotenv.config({ path: './.env' }); // By default, it looks for a .env file in the root of the project
+dotenv.config({ path: path.resolve(__dirname, '.env') }); // Always load the server .env file
 
 // 3. Import Database Connection Function (we'll create this soon)
 const connectDB = require('./config/db');
@@ -39,7 +38,8 @@ app.use(helmet({
 })); // Sets various HTTP headers to help protect your app
 
 // 5. Connect to Database
-connectDB(); // Call the function to establish MongoDB connection
+connectDB(); // Establish PostgreSQL connection when available
+const getDb = () => getDbClient();
 
 // 6. Middleware Setup
 // Enable CORS for all routes and origins (for development).
@@ -111,16 +111,16 @@ const canJoinPropertyRoom = (property, user) => {
   if (!property || !user) return false;
 
   const userId = String(user.id);
-  if (String(property.landlord) === userId) return true;
+  if (String(property.landlordId) === userId) return true;
   if (user.role === 'Tenant') return true;
 
   const hasApplication = (property.seatApplications || []).some(
-    (application) => String(application.tenant) === userId
+    (application) => String(application.tenantId) === userId
   );
   if (hasApplication) return true;
 
   const hasMessages = (property.messages || []).some(
-    (message) => String(message.sender) === userId
+    (message) => String(message.senderId) === userId
   );
 
   return hasMessages;
@@ -148,15 +148,18 @@ io.use(async (socket, next) => {
       return next();
     }
 
-    const user = await User.findById(decoded.id).select('_id role');
+    const user = await getDb().user.findUnique({
+      where: { id: String(decoded.id) },
+      select: { id: true, role: true },
+    });
 
     if (!user) {
       return next(new Error('User not found for realtime connection.'));
     }
 
     socket.data.user = {
-      id: String(user._id),
-      role: user.role,
+      id: String(user.id),
+      role: String(user.role || '').replace(/_/g, ' '),
     };
 
     next();
@@ -172,7 +175,14 @@ io.on('connection', (socket) => {
     if (!propertyId) return;
 
     try {
-      const property = await Property.findById(propertyId).select('landlord seatApplications messages');
+      const property = await getDb().property.findUnique({
+        where: { id: String(propertyId) },
+        select: {
+          landlordId: true,
+          seatApplications: { select: { tenantId: true } },
+          messages: { select: { senderId: true } },
+        },
+      });
 
       if (!property || !canJoinPropertyRoom(property, socket.data.user)) {
         socket.emit('property:error', { message: 'Not authorized to join this chat room.' });
