@@ -371,9 +371,3 @@ Contributions are highly encouraged and welcome! Please follow these general gui
 This project is licensed under the MIT License. See the `LICENSE` file in the monorepo root for full details.
 
 ---
-
-### 22. Author
-
-**Kaustubh Divekar**
-
----
