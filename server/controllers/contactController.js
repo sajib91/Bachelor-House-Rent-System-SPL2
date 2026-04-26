@@ -1,4 +1,4 @@
-// backend/controllers/contactController.js
+
 const Contact = require('../models/Contact');
 const sendEmail = require('../utils/emailService'); // Re-use the existing sendEmail utility
 
