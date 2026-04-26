@@ -1,4 +1,4 @@
-// backend/controllers/propertyController.js
+
 
 const Property = require('../models/Property');
 const User = require('../models/User');
