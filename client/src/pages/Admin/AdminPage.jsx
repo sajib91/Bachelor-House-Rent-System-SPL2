@@ -36,7 +36,7 @@ const AdminPage = () => {
       const roleMatch = userRoleFilter === 'All' || user.role === userRoleFilter;
       const searchText = userSearch.trim().toLowerCase();
       const searchMatch = !searchText
-        || [user.fullName, user.username, user.email, user.phoneNumber, user.verificationType]
+        || [user.fullName, user.username, user.email, user.phoneNumber, user.verificationType, user.instituteType, user.instituteName, user.hometown]
           .filter(Boolean)
           .some((item) => String(item).toLowerCase().includes(searchText));
 
@@ -45,8 +45,17 @@ const AdminPage = () => {
   }, [pendingUsers, userRoleFilter, userSearch]);
 
   const reviewUser = async (userId, status) => {
+    let feedback = '';
+    if (status === 'Rejected') {
+      feedback = window.prompt('Provide rejection feedback for the user:')?.trim() || '';
+      if (!feedback) {
+        toast.error('Feedback is required to reject a user verification.');
+        return;
+      }
+    }
+
     try {
-      const response = await apiClient.patch(`/auth/admin/users/${userId}/verification`, { status });
+      const response = await apiClient.patch(`/auth/admin/users/${userId}/verification`, { status, feedback });
       toast.success(response.data.message || `User ${status.toLowerCase()} successfully.`);
       await loadData();
     } catch (error) {
@@ -97,7 +106,7 @@ const AdminPage = () => {
             <input
               value={userSearch}
               onChange={(event) => setUserSearch(event.target.value)}
-              placeholder="Search user, email, phone, verification type"
+              placeholder="Search user, email, phone, institute, verification type"
               style={inputStyle}
             />
             <select value={userRoleFilter} onChange={(event) => setUserRoleFilter(event.target.value)} style={inputStyle}>
@@ -113,6 +122,12 @@ const AdminPage = () => {
                 <strong>{user.fullName || user.username || user.email}</strong>
                 <p style={metaStyle}>{user.role} · {user.verificationType} · {user.email}</p>
                 <p style={metaStyle}>{user.phoneNumber || 'No phone'}</p>
+                {user.role === 'Tenant' ? <p style={metaStyle}>Institute: {[user.instituteType, user.instituteName].filter(Boolean).join(' - ') || 'N/A'}</p> : null}
+                {user.role === 'Tenant' ? <p style={metaStyle}>Home town: {user.hometown || 'N/A'}</p> : null}
+                <div style={linkRowStyle}>
+                  {user.profilePictureUrl ? <a href={user.profilePictureUrl} target="_blank" rel="noreferrer" style={docLinkStyle}>Profile picture</a> : <span style={metaStyle}>No profile picture</span>}
+                  {user.verificationDocumentUrl ? <a href={user.verificationDocumentUrl} target="_blank" rel="noreferrer" style={docLinkStyle}>Identity document</a> : <span style={metaStyle}>No identity document</span>}
+                </div>
               </div>
               <div style={actionRowStyle}>
                 <button type="button" style={approveStyle} onClick={() => reviewUser(user._id, 'Verified')}>Approve</button>
@@ -186,6 +201,8 @@ const fieldStyle = { display: 'grid', gap: '6px', color: 'rgba(255,255,255,0.82)
 const inputStyle = { width: '100%', padding: '11px 12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(8,12,18,0.78)', color: '#fff' };
 const itemRowStyle = { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.08)' };
 const metaStyle = { margin: '4px 0 0', color: 'rgba(255,255,255,0.68)', fontSize: '0.9rem' };
+const linkRowStyle = { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '8px' };
+const docLinkStyle = { color: '#ffd166', textDecoration: 'none', fontWeight: 700, fontSize: '0.88rem' };
 const actionRowStyle = { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' };
 const approveStyle = { border: '0', borderRadius: '999px', padding: '9px 12px', background: 'rgba(56,161,105,0.2)', color: '#8ff0b4', fontWeight: 700 };
 const rejectStyle = { border: '0', borderRadius: '999px', padding: '9px 12px', background: 'rgba(229,62,62,0.2)', color: '#ff9b9b', fontWeight: 700 };

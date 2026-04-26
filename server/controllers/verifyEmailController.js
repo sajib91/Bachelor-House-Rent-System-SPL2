@@ -21,10 +21,7 @@ exports.verifyEmail = async (req, res, next) => {
 
   try {
     // Find user by the hashed token and check if token is not expired
-    const user = await User.findOne({
-      verificationToken: hashedToken,
-      verificationTokenExpires: { $gt: Date.now() }, // Check if token is still valid
-    });
+    const user = await User.findOne({ verificationToken: hashedToken });
 
     if (!user) {
       return res.status(400).json({ success: false, message: 'Invalid or expired verification token. Please request a new one.' });

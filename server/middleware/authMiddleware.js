@@ -35,7 +35,7 @@ exports.protect = async (req, res, next) => {
 
       // Attach user object to the request (excluding password) including their role
       // This makes req.user available in subsequent protected route handlers
-      req.user = await User.findById(decoded.id).select('-password'); // Select everything except password
+      req.user = await User.findById(decoded.id); // Password is excluded by default in SQL-backed user model
 
       if (!req.user) {
           // User belonging to token no longer exists

@@ -1,50 +1,56 @@
-const mongoose = require('mongoose');
+const { getPool } = require('../config/sqlPool');
 
-const thresholdsSchema = new mongoose.Schema(
-  {
-    fraud: {
-      medium: { type: Number },
-      high: { type: Number },
-    },
-    risk: {
-      medium: { type: Number },
-      high: { type: Number },
-    },
-    pricing: {
-      lowOccupancy: { type: Number },
-      highOccupancy: { type: Number },
-      strongQuality: { type: Number },
-      weakQuality: { type: Number },
-      strongCommute: { type: Number },
-      weakCommute: { type: Number },
-    },
-    quality: {
-      gradeA: { type: Number },
-      gradeB: { type: Number },
-      gradeC: { type: Number },
-    },
-  },
-  { _id: false }
-);
+const hydrate = (row) => {
+  if (!row) return null;
 
-const intelligenceSettingsSchema = new mongoose.Schema(
-  {
-    key: {
-      type: String,
-      required: true,
-      unique: true,
-      default: 'global',
-    },
-    thresholds: {
-      type: thresholdsSchema,
-      default: {},
-    },
-    updatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-    },
-  },
-  { timestamps: true }
-);
+  let thresholds = {};
+  if (row.thresholds) {
+    try {
+      thresholds = typeof row.thresholds === 'string' ? JSON.parse(row.thresholds) : row.thresholds;
+    } catch (error) {
+      thresholds = {};
+    }
+  }
 
-module.exports = mongoose.model('IntelligenceSettings', intelligenceSettingsSchema);
+  return {
+    _id: String(row.id),
+    id: row.id,
+    key: row.settingKey,
+    thresholds,
+    updatedBy: row.updatedBy,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+};
+
+class IntelligenceSettings {
+  static async findOne(query = {}) {
+    if (!query.key) return null;
+
+    const [rows] = await getPool().query(
+      'SELECT * FROM intelligence_settings WHERE settingKey = ? LIMIT 1',
+      [query.key]
+    );
+
+    return hydrate(rows[0]);
+  }
+
+  static async upsertByKey(key, payload = {}) {
+    const thresholdsJson = JSON.stringify(payload.thresholds || {});
+    const updatedBy = payload.updatedBy ? String(payload.updatedBy) : null;
+
+    await getPool().query(
+      `INSERT INTO intelligence_settings (settingKey, thresholds, updatedBy)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         thresholds = VALUES(thresholds),
+         updatedBy = VALUES(updatedBy),
+         updatedAt = CURRENT_TIMESTAMP`,
+      [key, thresholdsJson, updatedBy]
+    );
+
+    return this.findOne({ key });
+  }
+}
+
+module.exports = IntelligenceSettings;

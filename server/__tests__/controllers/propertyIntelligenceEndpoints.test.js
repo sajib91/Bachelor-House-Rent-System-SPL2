@@ -1,6 +1,5 @@
 const request = require('supertest');
 const express = require('express');
-const mongoose = require('mongoose');
 
 jest.mock('../../middleware/authMiddleware', () => ({
   protect: (req, res, next) => {
@@ -39,19 +38,18 @@ describe('Property Intelligence Endpoints', () => {
   let landlordId;
   let tenantId;
   let adminId;
+  let otherLandlordId;
   let propertyId;
+  let suffix;
 
   beforeEach(async () => {
-    landlordId = new mongoose.Types.ObjectId();
-    tenantId = new mongoose.Types.ObjectId();
-    adminId = new mongoose.Types.ObjectId();
+    suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    await User.create([
+    const [landlordUser, tenantUser, adminUser, otherLandlordUser] = await User.create([
       {
-        _id: landlordId,
-        username: 'landlord1',
+        username: `landlord1_${suffix}`,
         fullName: 'Landlord One',
-        email: 'landlord@example.com',
+        email: `landlord_${suffix}@example.com`,
         password: 'Password123!',
         role: 'Landlord',
         verificationType: 'NID',
@@ -60,10 +58,9 @@ describe('Property Intelligence Endpoints', () => {
         isVerified: true,
       },
       {
-        _id: tenantId,
-        username: 'tenant1',
+        username: `tenant1_${suffix}`,
         fullName: 'Tenant One',
-        email: 'tenant@example.com',
+        email: `tenant_${suffix}@example.com`,
         password: 'Password123!',
         role: 'Tenant',
         verificationType: 'Student ID',
@@ -72,10 +69,9 @@ describe('Property Intelligence Endpoints', () => {
         isVerified: true,
       },
       {
-        _id: adminId,
-        username: 'admin1',
+        username: `admin1_${suffix}`,
         fullName: 'Admin One',
-        email: 'admin@example.com',
+        email: `admin_${suffix}@example.com`,
         password: 'Password123!',
         role: 'Admin',
         verificationType: 'NID',
@@ -83,7 +79,23 @@ describe('Property Intelligence Endpoints', () => {
         verificationStatus: 'Verified',
         isVerified: true,
       },
+      {
+        username: `landlord2_${suffix}`,
+        fullName: 'Landlord Two',
+        email: `landlord2_${suffix}@example.com`,
+        password: 'Password123!',
+        role: 'Landlord',
+        verificationType: 'NID',
+        verificationDocumentUrl: 'https://example.com/nid-2.jpg',
+        verificationStatus: 'Verified',
+        isVerified: true,
+      },
     ]);
+
+    landlordId = landlordUser._id;
+    tenantId = tenantUser._id;
+    adminId = adminUser._id;
+    otherLandlordId = otherLandlordUser._id;
 
     const property = await Property.create({
       landlord: landlordId,
@@ -173,12 +185,10 @@ describe('Property Intelligence Endpoints', () => {
   });
 
   it('stores document verification info on apply', async () => {
-    const secondTenantId = new mongoose.Types.ObjectId();
-    await User.create({
-      _id: secondTenantId,
-      username: 'tenant2',
+    const secondTenant = await User.create({
+      username: `tenant2_${suffix}`,
       fullName: 'Tenant Two',
-      email: 'tenant2@example.com',
+      email: `tenant2_${suffix}@example.com`,
       password: 'Password123!',
       role: 'Tenant',
       verificationType: 'Student ID',
@@ -186,12 +196,13 @@ describe('Property Intelligence Endpoints', () => {
       verificationStatus: 'Verified',
       isVerified: true,
     });
+    const secondTenantId = secondTenant._id;
 
     const response = await request(app)
       .post(`/api/properties/${propertyId}/apply`)
       .set('x-test-user-id', String(secondTenantId))
       .set('x-test-role', 'Tenant')
-      .set('x-test-email', 'tenant2@example.com')
+      .set('x-test-email', `tenant2_${suffix}@example.com`)
       .set('x-test-name', 'Tenant Two')
       .set('x-test-document-url', 'https://example.com/student2.jpg')
       .send({ seatsRequested: 1, studentIdType: 'Student ID' });
@@ -210,12 +221,23 @@ describe('Property Intelligence Endpoints', () => {
       .post(`/api/properties/${propertyId}/payments`)
       .set('x-test-user-id', String(tenantId))
       .set('x-test-role', 'Tenant')
-      .send({ month: '2026-04', provider: 'bKash', transactionId: 'BK-99887766', amount: 5000 });
+      .send({
+        month: '2026-04',
+        provider: 'bKash',
+        transactionId: 'BK-99887766',
+        mobileAccountNo: '01711223344',
+        otp: '123456',
+        pin: '1234',
+        paymentSlipUrl: 'https://example.com/payment-slip.jpg',
+        amount: 5000,
+      });
 
     expect(response.statusCode).toBe(201);
     expect(response.body.success).toBe(true);
     expect(response.body.paymentAssistant).toBeDefined();
     expect(response.body.paymentAssistant.status).toBeDefined();
+    expect(response.body.paymentReceipt).toBeDefined();
+    expect(response.body.paymentReceipt.paymentSlipQr).toMatch(/^QR-/);
   });
 
   it('returns tenant reminder engine data', async () => {
@@ -270,5 +292,76 @@ describe('Property Intelligence Endpoints', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.thresholds.fraud.medium).toBe(30);
     expect(response.body.thresholds.fraud.high).toBe(60);
+  });
+
+  it('allows landlord owner to update own listing', async () => {
+    const response = await request(app)
+      .patch(`/api/properties/${propertyId}`)
+      .set('x-test-user-id', String(landlordId))
+      .set('x-test-role', 'Landlord')
+      .send({ title: 'Updated title by owner' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.title).toBe('Updated title by owner');
+  });
+
+  it('blocks non-owner landlord from updating listing', async () => {
+    const response = await request(app)
+      .patch(`/api/properties/${propertyId}`)
+      .set('x-test-user-id', String(otherLandlordId))
+      .set('x-test-role', 'Landlord')
+      .send({ title: 'Unauthorized update' });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body.message).toMatch(/only the landlord owner can update/i);
+  });
+
+  it('allows landlord owner to delete own listing', async () => {
+    const response = await request(app)
+      .delete(`/api/properties/${propertyId}`)
+      .set('x-test-user-id', String(landlordId))
+      .set('x-test-role', 'Landlord');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+
+    const deleted = await Property.findById(propertyId);
+    expect(deleted).toBeNull();
+  });
+
+  it('requires feedback when admin removes listing', async () => {
+    const response = await request(app)
+      .patch(`/api/properties/admin/${propertyId}/remove`)
+      .set('x-test-user-id', String(adminId))
+      .set('x-test-role', 'Admin')
+      .send({ feedback: 'bad' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.message).toMatch(/feedback is required/i);
+  });
+
+  it('admin can remove listing and store feedback', async () => {
+    const response = await request(app)
+      .patch(`/api/properties/admin/${propertyId}/remove`)
+      .set('x-test-user-id', String(adminId))
+      .set('x-test-role', 'Admin')
+      .set('x-test-name', 'Admin One')
+      .send({ feedback: 'Listing had misleading details and policy violations.' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+
+    const removed = await Property.findById(propertyId);
+    expect(removed).not.toBeNull();
+    expect(removed.isActive).toBe(false);
+    expect(removed.publicationStatus).toBe('Rejected');
+    expect(Array.isArray(removed.messages)).toBe(true);
+
+    const feedbackMessage = removed.messages.find(
+      (entry) => entry.meta && entry.meta.type === 'ADMIN_REMOVAL_FEEDBACK'
+    );
+
+    expect(feedbackMessage).toBeDefined();
+    expect(feedbackMessage.meta.feedback).toContain('misleading details');
   });
 });

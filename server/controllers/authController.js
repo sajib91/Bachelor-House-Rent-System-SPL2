@@ -118,7 +118,20 @@ const issuePasswordResetOtp = async (user) => {
 // @access  Public
 exports.registerUser = async (req, res, next) => {
   // Input validation will be handled by middleware before this controller is reached
-  const { username, fullName, email, password, role, phoneNumber, verificationType, verificationDocumentUrl } = req.body;
+  const {
+    username,
+    fullName,
+    email,
+    password,
+    role,
+    phoneNumber,
+    verificationType,
+    verificationDocumentUrl,
+    instituteType,
+    instituteName,
+    hometown,
+    profilePictureUrl,
+  } = req.body;
 
   try {
     const normalizedRole = role || 'Tenant';
@@ -163,9 +176,15 @@ exports.registerUser = async (req, res, next) => {
       password, // Send plain password; model will hash it
       phoneNumber,
       role: normalizedRole,
+      instituteType: normalizedRole === 'Tenant' ? instituteType : undefined,
+      instituteName: normalizedRole === 'Tenant' ? instituteName : undefined,
+      hometown: normalizedRole === 'Tenant' ? hometown : undefined,
+      profilePictureUrl,
       verificationType: verificationType || 'Student ID',
       verificationDocumentUrl,
       verificationStatus: 'Pending',
+      verificationFeedback: undefined,
+      verificationReviewedAt: undefined,
       isVerified: false,
     });
 
@@ -181,16 +200,19 @@ exports.registerUser = async (req, res, next) => {
           fullName: newUser.fullName,
           email: newUser.email,
           phoneNumber: newUser.phoneNumber,
+          instituteType: newUser.instituteType,
+          instituteName: newUser.instituteName,
+          hometown: newUser.hometown,
+          profilePictureUrl: newUser.profilePictureUrl,
           role: newUser.role,
           verificationStatus: newUser.verificationStatus,
         },
       });
 
       } catch (error) {
-      // Handle Mongoose validation errors
-      if (error.name === 'ValidationError') {
-        const messages = Object.values(error.errors).map(val => val.message);
-        return res.status(400).json({ success: false, message: messages.join(', ') });
+      // Handle model and database validation errors
+      if (error.code === 'ER_DUP_ENTRY') {
+        return res.status(400).json({ success: false, message: 'Duplicate value violates a unique constraint.' });
       }
       console.error('Registration Error:', error);
       next(error); // Pass to global error handler
@@ -247,7 +269,7 @@ exports.loginUser = async (req, res, next) => {
     }
 
     // 2. Find user by email, username, or phone number. Explicitly select password because it's `select: false` in schema.
-    const user = await User.findOne(query).select('+password');
+    const user = await User.findOne(query, { includePassword: true });
 
     // 3. If user not found or password doesn't match, send generic error
     if (!user) {
@@ -268,8 +290,9 @@ exports.loginUser = async (req, res, next) => {
       const currentVerificationStatus = user.verificationStatus || (user.isVerified ? 'Verified' : 'Pending');
 
       if (currentVerificationStatus !== 'Verified' || !user.isVerified) {
+        const feedbackText = (user.verificationFeedback || '').trim();
         const rejectionMessage = currentVerificationStatus === 'Rejected'
-          ? 'Your account verification was rejected by admin. Please contact support.'
+          ? `Your account verification was rejected by admin.${feedbackText ? ` Feedback: ${feedbackText}` : ' Please contact support.'}`
           : 'Your registration is pending admin verification approval. Please try again later.';
 
         return res.status(403).json({ success: false, message: rejectionMessage });
@@ -400,14 +423,12 @@ exports.resetPassword = async (req, res, next) => {
       user = await User.findOne({
         email: req.body.email,
         passwordResetOtp: hashedOtp,
-        passwordResetOtpExpires: { $gt: Date.now() },
-      }).select('+passwordResetOtp +passwordResetOtpExpires');
+      }, { includePassword: true });
     } else if (req.params.token) {
       const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
       user = await User.findOne({
         passwordResetToken: hashedToken,
-        passwordResetExpires: { $gt: Date.now() },
-      }).select('+passwordResetToken +passwordResetExpires');
+      }, { includePassword: true });
     }
 
     if (!user) {
@@ -495,8 +516,8 @@ exports.resendVerificationEmail = async (req, res, next) => {
         } catch (emailError) {
             console.error('Error sending verification email:', emailError);
             // Optionally, revert the token if email sending fails to prevent a valid but unsent token
-            user.emailVerificationToken = undefined;
-            user.emailVerificationTokenExpiry = undefined;
+            user.verificationToken = undefined;
+            user.verificationTokenExpires = undefined;
             await user.save();
             return next(new Error('Failed to send verification email. Please try again later.'));
         }
@@ -553,6 +574,12 @@ exports.getCurrentUser = async (req, res, next) => {
         verificationStatus: user.verificationStatus,
         verificationType: user.verificationType,
         verificationDocumentUrl: user.verificationDocumentUrl,
+        instituteType: user.instituteType,
+        instituteName: user.instituteName,
+        hometown: user.hometown,
+        profilePictureUrl: user.profilePictureUrl,
+        verificationFeedback: user.verificationFeedback,
+        verificationReviewedAt: user.verificationReviewedAt,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         // Add other non-sensitive fields you want to return
@@ -569,12 +596,9 @@ exports.getCurrentUser = async (req, res, next) => {
 // @access  Private/Admin
 exports.getPendingVerifications = async (req, res, next) => {
   try {
-    const users = await User.find({ verificationStatus: 'Pending', role: { $in: ['Tenant', 'Landlord'] } })
-      .select('fullName username email phoneNumber role verificationType verificationDocumentUrl verificationStatus createdAt')
-      .sort({ createdAt: -1 });
+    const users = await User.findPendingVerificationUsers();
 
-    const enrichedUsers = users.map((userDoc) => {
-      const user = userDoc.toObject();
+    const enrichedUsers = users.map((user) => {
       return {
         ...user,
         verificationInsights: assessDocumentVerification({
@@ -596,19 +620,54 @@ exports.getPendingVerifications = async (req, res, next) => {
 // @access  Private/Admin
 exports.reviewUserVerification = async (req, res, next) => {
   try {
-    const { status } = req.body;
+    const { status, feedback } = req.body;
     if (!['Verified', 'Rejected'].includes(status)) {
       return res.status(400).json({ success: false, message: 'Status must be Verified or Rejected.' });
     }
 
-    const user = await User.findById(req.params.userId);
+    const trimmedFeedback = String(feedback || '').trim();
+    if (status === 'Rejected' && !trimmedFeedback) {
+      return res.status(400).json({ success: false, message: 'Feedback is required when rejecting a user.' });
+    }
+
+    const user = await User.findById(req.params.userId, { includePassword: true });
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
     user.verificationStatus = status;
     user.isVerified = status === 'Verified';
+    user.verificationFeedback = status === 'Rejected' ? trimmedFeedback : null;
+    user.verificationReviewedAt = new Date();
     await user.save({ validateBeforeSave: false });
+
+    if (user.email) {
+      const outcomeTitle = status === 'Verified' ? 'Verification Approved' : 'Verification Rejected';
+      const feedbackLine = status === 'Rejected' && trimmedFeedback
+        ? `<p><strong>Admin feedback:</strong> ${trimmedFeedback}</p>`
+        : '';
+
+      const emailMessage = `
+        <h2>${outcomeTitle}</h2>
+        <p>Hello ${user.fullName || user.username || 'User'},</p>
+        <p>Your account verification request is now marked as <strong>${status}</strong>.</p>
+        ${feedbackLine}
+        <p>If you need help, please contact support.</p>
+      `;
+
+      try {
+        await sendEmail({
+          email: user.email,
+          subject: `To-Let Globe verification ${status.toLowerCase()}`,
+          html: emailMessage,
+          text: status === 'Rejected' && trimmedFeedback
+            ? `Your verification was rejected. Admin feedback: ${trimmedFeedback}`
+            : `Your verification is now ${status}.`,
+        });
+      } catch (emailError) {
+        console.error('Verification review email failed:', emailError);
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -618,6 +677,8 @@ exports.reviewUserVerification = async (req, res, next) => {
         role: user.role,
         verificationStatus: user.verificationStatus,
         isVerified: user.isVerified,
+        verificationFeedback: user.verificationFeedback,
+        verificationReviewedAt: user.verificationReviewedAt,
       },
     });
   } catch (error) {

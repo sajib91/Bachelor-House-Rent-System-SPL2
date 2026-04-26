@@ -56,6 +56,43 @@ exports.validateRegistration = [
     .trim()
     .isLength({ min: 8, max: 20 }).withMessage('Phone number must be between 8 and 20 characters.'),
 
+  body('instituteType')
+    .optional({ checkFalsy: true })
+    .isIn(['School', 'College', 'University', 'Other Institute'])
+    .withMessage('Invalid institute type.'),
+
+  body('instituteName')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 2, max: 160 }).withMessage('Institute name must be between 2 and 160 characters.'),
+
+  body('hometown')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 2, max: 120 }).withMessage('Hometown must be between 2 and 120 characters.'),
+
+  body('profilePictureUrl')
+    .optional({ checkFalsy: true })
+    .trim()
+    .custom((value) => {
+      // Accept absolute URLs (including localhost) and local uploaded file paths.
+      const isAbsoluteUrl = /^https?:\/\//i.test(value);
+      const isLocalUploadPath = /^\/uploads\//i.test(value);
+
+      if (isLocalUploadPath) {
+        return true;
+      }
+
+      if (isAbsoluteUrl) {
+        const hasValidAbsoluteUrl = /^https?:\/\/(localhost|127\.0\.0\.1|[^\s/$.?#].[^\s]*)/i.test(value);
+        if (hasValidAbsoluteUrl) {
+          return true;
+        }
+      }
+
+      throw new Error('Profile picture must be a valid uploaded image link.');
+    }),
+
 
   // Role (optional, if provided, must be valid)
   body('role')
@@ -78,6 +115,20 @@ exports.validateRegistration = [
 
     if (selectedRole === 'Tenant' && !['Student ID', 'NID'].includes(verificationType)) {
       throw new Error('Tenant registration requires Student ID or NID verification.');
+    }
+
+    if (selectedRole === 'Tenant') {
+      if (!req.body.instituteType) {
+        throw new Error('Tenant registration requires institute type.');
+      }
+
+      if (!req.body.instituteName) {
+        throw new Error('Tenant registration requires institute name.');
+      }
+
+      if (!req.body.hometown) {
+        throw new Error('Tenant registration requires home town.');
+      }
     }
 
     return true;

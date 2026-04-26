@@ -73,10 +73,6 @@ const LoginPage = () => {
             </Field>
           </div>
 
-          {selectedRole === 'Admin' && (
-            <p style={adminHintStyle}>System Admin login uses User ID: admin and password: admin@123</p>
-          )}
-
           <button type="submit" style={submitStyle} disabled={isSubmitting}>
             {isSubmitting ? 'Logging in...' : 'Login'}
           </button>
@@ -106,7 +102,6 @@ const fieldGridStyle = { display: 'grid', gap: '16px', marginTop: '24px' };
 const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(8,12,18,0.78)', color: '#fff' };
 const submitStyle = { marginTop: '22px', width: '100%', border: '0', borderRadius: '999px', padding: '14px 18px', fontWeight: 800, background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', color: '#09111b' };
 const errorTextStyle = { color: '#ff9b9b', fontSize: '0.92rem' };
-const adminHintStyle = { marginTop: '10px', color: 'rgba(255, 209, 102, 0.92)', fontSize: '0.88rem' };
 const linksStyle = { display: 'flex', justifyContent: 'space-between', gap: '12px', marginTop: '18px', flexWrap: 'wrap' };
 const linkStyle = { color: '#ffd166', fontWeight: 700, textDecoration: 'none' };
 

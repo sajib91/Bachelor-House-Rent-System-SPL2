@@ -17,8 +17,27 @@ const DashboardPage = () => {
   const [adminInsights, setAdminInsights] = useState(null);
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [trackerMonth, setTrackerMonth] = useState(currentMonth);
-  const [paymentForms, setPaymentForms] = useState({});
   const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [removeModal, setRemoveModal] = useState({ open: false, propertyId: null, title: '', feedback: '' });
+  const [isRemovingProperty, setIsRemovingProperty] = useState(false);
+  const [moderationStatusFilter, setModerationStatusFilter] = useState('All');
+  const [isReviewingApplication, setIsReviewingApplication] = useState(false);
+  const [isSubmittingSecurePayment, setIsSubmittingSecurePayment] = useState(false);
+  const [isUploadingPaymentSlip, setIsUploadingPaymentSlip] = useState(false);
+  const [securePaymentModal, setSecurePaymentModal] = useState({
+    open: false,
+    step: 1,
+    propertyId: null,
+    applicationId: null,
+    title: '',
+    month: currentMonth,
+    amount: 0,
+    provider: 'Nagad',
+    mobileAccountNo: '',
+    otp: '',
+    pin: '',
+    paymentSlipUrl: '',
+  });
 
   const loadDashboardData = async () => {
     if (!token || isAuthContextLoading) {
@@ -37,15 +56,16 @@ const DashboardPage = () => {
       setProfile(user);
 
       if (user.role === 'Admin') {
-        const [usersResponse, publicationResponse, insightsResponse] = await Promise.all([
+        const [usersResponse, publicationResponse, insightsResponse, allListingsResponse] = await Promise.all([
           apiClient.get('/auth/admin/pending-verifications'),
           apiClient.get('/properties/admin/pending-publications'),
           apiClient.get('/properties/admin/insights'),
+          apiClient.get('/properties/mine'),
         ]);
         setPendingUsers(usersResponse.data.users || []);
         setPendingPublications(publicationResponse.data.properties || []);
         setAdminInsights(insightsResponse.data.insights || null);
-        setProperties([]);
+        setProperties(allListingsResponse.data.properties || []);
         setTenantReminders(null);
         setLandlordIntelligence([]);
       } else if (user.role === 'Landlord') {
@@ -160,6 +180,26 @@ const DashboardPage = () => {
     })
   ), [tenantMonthPaymentRows, currentMonth]);
 
+  const filteredModerationListings = useMemo(() => {
+    if (moderationStatusFilter === 'All') {
+      return properties;
+    }
+
+    if (moderationStatusFilter === 'Active') {
+      return properties.filter((property) => property.isActive !== false);
+    }
+
+    return properties.filter((property) => String(property.publicationStatus || 'Pending') === moderationStatusFilter);
+  }, [properties, moderationStatusFilter]);
+
+  const landlordPendingApplications = useMemo(() => (
+    properties.flatMap((property) =>
+      (property.seatApplications || [])
+        .filter((application) => application.status === 'Pending')
+        .map((application) => ({ property, application }))
+    )
+  ), [properties]);
+
   const totalUnpaidAmount = useMemo(() => (
     unpaidCurrentMonthRows.reduce((sum, { property, application }) => sum + (Number(property.monthlyRentPerSeat || 0) * Number(application.seatsRequested || 1)), 0)
   ), [unpaidCurrentMonthRows]);
@@ -169,8 +209,17 @@ const DashboardPage = () => {
   ), [unpaidCurrentMonthRows]);
 
   const reviewUserVerification = async (userId, status) => {
+    let feedback = '';
+    if (status === 'Rejected') {
+      feedback = window.prompt('Provide rejection feedback for the user:')?.trim() || '';
+      if (!feedback) {
+        toast.error('Feedback is required to reject a user verification.');
+        return;
+      }
+    }
+
     try {
-      const response = await apiClient.patch(`/auth/admin/users/${userId}/verification`, { status });
+      const response = await apiClient.patch(`/auth/admin/users/${userId}/verification`, { status, feedback });
       toast.success(response.data.message || `User ${status.toLowerCase()} successfully.`);
       await loadDashboardData();
     } catch (error) {
@@ -188,81 +237,159 @@ const DashboardPage = () => {
     }
   };
 
-  const updatePaymentForm = (propertyId, field, value) => {
-    setPaymentForms((previous) => {
-      const existing = previous[propertyId] || { provider: 'bKash', transactionId: '', month: currentMonth };
-      return {
-        ...previous,
-        [propertyId]: {
-          ...existing,
-          [field]: value,
-        },
-      };
+  const openAdminRemoveModal = (property) => {
+    setRemoveModal({
+      open: true,
+      propertyId: property?._id || null,
+      title: property?.title || 'Selected listing',
+      feedback: '',
     });
   };
 
-  const submitTenantPaymentFromDashboard = async (propertyId, amountPerSeat, seatsBooked) => {
-    const draft = paymentForms[propertyId] || {};
-    try {
-      const totalAmount = Number(amountPerSeat || 0) * Number(seatsBooked || 1);
-      const response = await apiClient.post(`/properties/${propertyId}/payments`, {
-        month: draft.month || currentMonth,
-        provider: draft.provider || 'bKash',
-        transactionId: draft.transactionId,
-        amount: totalAmount,
-      });
-      toast.success(response.data.message || 'Rent payment submitted.');
-      setPaymentForms((previous) => ({
-        ...previous,
-        [propertyId]: { provider: 'bKash', transactionId: '' },
-      }));
-      await loadDashboardData();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Unable to submit rent payment.');
-    }
+  const closeAdminRemoveModal = () => {
+    if (isRemovingProperty) return;
+    setRemoveModal({ open: false, propertyId: null, title: '', feedback: '' });
   };
 
-  const bulkPaymentForm = paymentForms.__bulk || { provider: 'bKash', transactionId: '', month: currentMonth };
-
-  const updateBulkPaymentForm = (field, value) => {
-    setPaymentForms((previous) => ({
-      ...previous,
-      __bulk: {
-        ...bulkPaymentForm,
-        [field]: value,
-      },
-    }));
+  const updateRemoveFeedback = (value) => {
+    setRemoveModal((previous) => ({ ...previous, feedback: value }));
   };
 
-  const payAllDueSeats = async () => {
-    if (unpaidCurrentMonthRows.length === 0) {
-      toast.info('No unpaid seats found for payment.');
+  const confirmAdminRemoveProperty = async () => {
+    const feedback = String(removeModal.feedback || '').trim();
+    if (feedback.length < 5) {
+      toast.error('Feedback must be at least 5 characters long.');
       return;
     }
 
-    const monthToUse = bulkPaymentForm.month || currentMonth;
-
     try {
-      await Promise.all(
-        unpaidCurrentMonthRows.map(({ property, application }) => {
-          const amount = Number(property.monthlyRentPerSeat || 0) * Number(application.seatsRequested || 1);
-          return apiClient.post(`/properties/${property._id}/payments`, {
-            month: monthToUse,
-            provider: bulkPaymentForm.provider || 'bKash',
-            transactionId: bulkPaymentForm.transactionId,
-            amount,
-          });
-        })
-      );
-
-      toast.success('All due seat payments submitted.');
-      setPaymentForms((previous) => ({
-        ...previous,
-        __bulk: { provider: 'bKash', transactionId: '', month: currentMonth },
-      }));
+      setIsRemovingProperty(true);
+      const response = await apiClient.patch(`/properties/admin/${removeModal.propertyId}/remove`, { feedback });
+      toast.success(response.data.message || 'Listing removed successfully.');
+      closeAdminRemoveModal();
       await loadDashboardData();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Unable to submit all due payments.');
+      toast.error(error.response?.data?.message || 'Unable to remove listing.');
+    } finally {
+      setIsRemovingProperty(false);
+    }
+  };
+
+  const reviewSeatApplicationFromDashboard = async (propertyId, applicationId, status) => {
+    try {
+      setIsReviewingApplication(true);
+      const response = await apiClient.patch(`/properties/${propertyId}/applications/${applicationId}`, { status });
+      toast.success(response.data.message || `Seat request ${status.toLowerCase()}.`);
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to review seat request.');
+    } finally {
+      setIsReviewingApplication(false);
+    }
+  };
+
+  const openSecurePaymentModal = (property, application) => {
+    const seats = Number(application?.seatsRequested || 1);
+    const totalAmount = Number(property?.monthlyRentPerSeat || 0) * seats;
+
+    setSecurePaymentModal({
+      open: true,
+      step: 1,
+      propertyId: property?._id,
+      applicationId: application?._id,
+      title: property?.title || 'Seat booking',
+      month: property?.rentalMonth || currentMonth,
+      amount: totalAmount,
+      provider: 'Nagad',
+      mobileAccountNo: '',
+      otp: '',
+      pin: '',
+      paymentSlipUrl: '',
+    });
+  };
+
+  const closeSecurePaymentModal = () => {
+    if (isSubmittingSecurePayment) return;
+    setSecurePaymentModal((previous) => ({ ...previous, open: false, step: 1 }));
+  };
+
+  const updateSecurePaymentField = (field, value) => {
+    setSecurePaymentModal((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const uploadPaymentSlipFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('photos', file);
+
+    try {
+      setIsUploadingPaymentSlip(true);
+      const response = await apiClient.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const url = response.data?.urls?.[0];
+      if (!url) {
+        throw new Error('Upload did not return a slip URL.');
+      }
+
+      updateSecurePaymentField('paymentSlipUrl', url);
+      toast.success('Payment slip uploaded successfully.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || error.message || 'Unable to upload payment slip.');
+    } finally {
+      setIsUploadingPaymentSlip(false);
+      event.target.value = '';
+    }
+  };
+
+  const proceedSecurePaymentStep = () => {
+    if (securePaymentModal.step === 1) {
+      if (!securePaymentModal.provider || !securePaymentModal.mobileAccountNo) {
+        toast.error('Select payment method and enter mobile account number.');
+        return;
+      }
+    }
+
+    if (securePaymentModal.step === 2) {
+      if (!securePaymentModal.otp || securePaymentModal.otp.length < 4) {
+        toast.error('Enter a valid OTP code.');
+        return;
+      }
+    }
+
+    if (securePaymentModal.step === 3) {
+      if (!securePaymentModal.pin || securePaymentModal.pin.length < 4) {
+        toast.error('Enter a valid payment PIN.');
+        return;
+      }
+    }
+
+    setSecurePaymentModal((previous) => ({ ...previous, step: Math.min(previous.step + 1, 4) }));
+  };
+
+  const submitSecurePaymentFromDashboard = async () => {
+    try {
+      setIsSubmittingSecurePayment(true);
+      const response = await apiClient.post(`/properties/${securePaymentModal.propertyId}/payments`, {
+        month: securePaymentModal.month || currentMonth,
+        provider: securePaymentModal.provider,
+        mobileAccountNo: securePaymentModal.mobileAccountNo,
+        otp: securePaymentModal.otp,
+        pin: securePaymentModal.pin,
+        paymentSlipUrl: securePaymentModal.paymentSlipUrl,
+        amount: securePaymentModal.amount,
+      });
+
+      toast.success(response.data.message || 'Secure payment submitted successfully.');
+      closeSecurePaymentModal();
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to complete secure payment.');
+    } finally {
+      setIsSubmittingSecurePayment(false);
     }
   };
 
@@ -314,6 +441,9 @@ const DashboardPage = () => {
           <div style={{ fontWeight: 700, color: '#ffd166' }}>Account role</div>
           <p style={{ margin: '10px 0 0' }}>{profile.role}</p>
           <p style={smallTextStyle}>Verification: {profile.verificationStatus || 'Verified'}</p>
+          {profile.verificationStatus === 'Rejected' && profile.verificationFeedback ? (
+            <p style={rejectionFeedbackStyle}>Admin feedback: {profile.verificationFeedback}</p>
+          ) : null}
           <Link to="/properties" style={ctaLinkStyle}>Go to seats</Link>
         </div>
       </section>
@@ -328,6 +458,12 @@ const DashboardPage = () => {
                   <div>
                     <strong>{item.fullName || item.username || item.email}</strong>
                     <p style={smallTextStyle}>{item.role} · {item.verificationType}</p>
+                    {item.role === 'Tenant' ? <p style={smallTextStyle}>Institute: {[item.instituteType, item.instituteName].filter(Boolean).join(' - ') || 'N/A'}</p> : null}
+                    {item.role === 'Tenant' ? <p style={smallTextStyle}>Home town: {item.hometown || 'N/A'}</p> : null}
+                    <div style={assetLinkRowStyle}>
+                      {item.profilePictureUrl ? <a href={item.profilePictureUrl} target="_blank" rel="noreferrer" style={assetLinkStyle}>Profile picture</a> : null}
+                      {item.verificationDocumentUrl ? <a href={item.verificationDocumentUrl} target="_blank" rel="noreferrer" style={assetLinkStyle}>Identity document</a> : null}
+                    </div>
                     {item.verificationInsights ? (
                       <p style={smallTextStyle}>Doc check: {item.verificationInsights.status} ({item.verificationInsights.score}%)</p>
                     ) : null}
@@ -357,6 +493,32 @@ const DashboardPage = () => {
             </article>
 
             <article style={panelStyle}>
+              <h2 style={panelTitleStyle}>Listing moderation</h2>
+              <label style={fieldStyle}>
+                <span>Filter listings</span>
+                <select value={moderationStatusFilter} onChange={(event) => setModerationStatusFilter(event.target.value)} style={inputStyle}>
+                  <option value="All">All</option>
+                  <option value="Active">Active</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Rejected">Rejected</option>
+                  <option value="Approved">Approved</option>
+                </select>
+              </label>
+              {filteredModerationListings.length > 0 ? filteredModerationListings.map((property) => (
+                <div key={`moderation-${property._id}`} style={listItemStyle}>
+                  <div>
+                    <strong>{property.title}</strong>
+                    <p style={smallTextStyle}>{property.area} · {property.landlordName || property.landlord?.fullName || 'Landlord'}</p>
+                    <p style={smallTextStyle}>Status: {property.publicationStatus || 'Pending'} · {property.isActive === false ? 'Inactive' : 'Active'}</p>
+                  </div>
+                  <div style={actionRowStyle}>
+                    <button type="button" onClick={() => openAdminRemoveModal(property)} style={rejectButtonStyle}>Remove with feedback</button>
+                  </div>
+                </div>
+              )) : <p style={mutedTextStyle}>No listings found for the selected filter.</p>}
+            </article>
+
+            <article style={panelStyle}>
               <h2 style={panelTitleStyle}>Smart admin insights</h2>
               {adminInsights ? (
                 <>
@@ -382,15 +544,48 @@ const DashboardPage = () => {
           <article style={panelStyle}>
             <h2 style={panelTitleStyle}>Your seats</h2>
             {properties.length > 0 ? properties.map((property) => (
-              <div key={property._id} style={listItemStyle}>
-                <div>
-                  <strong>{property.title}</strong>
-                  <p style={smallTextStyle}>{property.area} · {property.availableSeats}/{property.totalSeats} seats</p>
+              <div key={property._id} style={listBlockStyle}>
+                <div style={listItemStyle}>
+                  <div>
+                    <strong>{property.title}</strong>
+                    <p style={smallTextStyle}>{property.area} · {property.availableSeats}/{property.totalSeats} seats</p>
+                  </div>
+                  <span style={badgeStyle(property.publicationStatus || 'Pending')}>{property.publicationStatus || 'Pending'}</span>
                 </div>
-                <span style={badgeStyle(property.publicationStatus || 'Pending')}>{property.publicationStatus || 'Pending'}</span>
+                {(() => {
+                  const removalMessage = (property.messages || [])
+                    .slice()
+                    .reverse()
+                    .find((message) => message?.meta?.type === 'ADMIN_REMOVAL_FEEDBACK');
+
+                  if (!removalMessage) return null;
+
+                  return (
+                    <p style={rejectionFeedbackStyle}>
+                      Admin removal feedback: {removalMessage?.meta?.feedback || removalMessage.message}
+                    </p>
+                  );
+                })()}
               </div>
             )) : <p style={mutedTextStyle}>No seats yet. Use Add Property to submit your host seat listing.</p>}
             <Link to="/add-property" style={ctaLinkStyle}>Add new seat</Link>
+          </article>
+
+          <article style={panelStyle}>
+            <h2 style={panelTitleStyle}>Seat request notifications</h2>
+            {landlordPendingApplications.length > 0 ? landlordPendingApplications.map(({ property, application }) => (
+              <div key={`${property._id}-${application._id}`} style={listItemStyle}>
+                <div>
+                  <strong>{property.title}</strong>
+                  <p style={smallTextStyle}>{application.tenantName || 'Tenant'} requested {application.seatsRequested || 1} seat(s)</p>
+                  <p style={smallTextStyle}>{application.studentIdType || 'Student ID'} · {application.note || 'No note provided'}</p>
+                </div>
+                <div style={actionRowStyle}>
+                  <button type="button" onClick={() => reviewSeatApplicationFromDashboard(property._id, application._id, 'Approved')} style={approveButtonStyle} disabled={isReviewingApplication}>Approve</button>
+                  <button type="button" onClick={() => reviewSeatApplicationFromDashboard(property._id, application._id, 'Rejected')} style={rejectButtonStyle} disabled={isReviewingApplication}>Reject</button>
+                </div>
+              </div>
+            )) : <p style={mutedTextStyle}>No new seat application notifications.</p>}
           </article>
 
           <article style={panelStyle}>
@@ -447,7 +642,6 @@ const DashboardPage = () => {
               <div key={`intel-${entry.propertyId}`} style={listBlockStyle}>
                 <strong>{entry.title}</strong>
                 <p style={smallTextStyle}>Quality: {entry.listingQuality?.score}% (Grade {entry.listingQuality?.grade})</p>
-                <p style={smallTextStyle}>Commute score: {entry.commuteScore?.score}% ({entry.commuteScore?.label})</p>
                 <p style={smallTextStyle}>Pricing: ৳{entry.pricingRecommendation?.recommendedRent} ({entry.pricingRecommendation?.delta >= 0 ? '+' : ''}{entry.pricingRecommendation?.delta})</p>
                 <p style={entry.rentalRisk?.level === 'High' ? overdueTextStyle : smallTextStyle}>Risk: {entry.rentalRisk?.level} ({entry.rentalRisk?.score}%)</p>
                 {(entry.listingQuality?.improvements || []).slice(0, 2).map((tip) => (
@@ -498,28 +692,8 @@ const DashboardPage = () => {
             {new Date().getDate() <= 5 && unpaidCurrentMonthCount > 0 && (
               <p style={alertTextStyle}>Monthly reminder: You have {unpaidCurrentMonthCount} unpaid rent item(s) for this month.</p>
             )}
-            <label style={fieldStyle}>
-              <span>Bulk payment month</span>
-              <input type="month" value={bulkPaymentForm.month} onChange={(event) => updateBulkPaymentForm('month', event.target.value)} style={inputStyle} />
-            </label>
-            <label style={fieldStyle}>
-              <span>Bulk provider</span>
-              <select value={bulkPaymentForm.provider} onChange={(event) => updateBulkPaymentForm('provider', event.target.value)} style={inputStyle}>
-                <option value="bKash">bKash</option>
-                <option value="Nagad">Nagad</option>
-                <option value="Rocket">Rocket</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label style={fieldStyle}>
-              <span>Bulk transaction ID</span>
-              <input value={bulkPaymentForm.transactionId} onChange={(event) => updateBulkPaymentForm('transactionId', event.target.value)} style={inputStyle} placeholder="Txn ID" />
-            </label>
-            <button type="button" onClick={payAllDueSeats} style={ctaButtonStyle} disabled={unpaidCurrentMonthRows.length === 0}>Pay all due seats</button>
+            <p style={smallTextStyle}>SSL secure flow: payment method -&gt; mobile account -&gt; OTP -&gt; PIN -&gt; payment slip with QR authentication.</p>
             {tenantMonthPaymentRows.length > 0 ? tenantMonthPaymentRows.map(({ property, application, payment }) => {
-              const draft = paymentForms[property._id] || { provider: 'bKash', transactionId: '', month: property.rentalMonth || currentMonth };
-              const defaultPaymentMonth = property.rentalMonth || currentMonth;
-              const paymentMonth = draft.month || defaultPaymentMonth;
               const seats = Number(application.seatsRequested || 1);
               const totalAmount = Number(property.monthlyRentPerSeat || 0) * seats;
 
@@ -529,27 +703,13 @@ const DashboardPage = () => {
                   <p style={smallTextStyle}>{seats} seat(s) · Total ৳{totalAmount}</p>
                   <p style={smallTextStyle}>Rental month: {property.rentalMonth || currentMonth}</p>
                   <p style={smallTextStyle}>Payment status: {payment?.status || 'Not submitted'}</p>
-                  {payment ? null : (
+                  {payment ? (
                     <>
-                      <label style={fieldStyle}>
-                        <span>Payment month</span>
-                        <input type="month" value={paymentMonth} onChange={(event) => updatePaymentForm(property._id, 'month', event.target.value)} style={inputStyle} />
-                      </label>
-                      <label style={fieldStyle}>
-                        <span>Provider</span>
-                        <select value={draft.provider} onChange={(event) => updatePaymentForm(property._id, 'provider', event.target.value)} style={inputStyle}>
-                          <option value="bKash">bKash</option>
-                          <option value="Nagad">Nagad</option>
-                          <option value="Rocket">Rocket</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </label>
-                      <label style={fieldStyle}>
-                        <span>Transaction ID</span>
-                        <input value={draft.transactionId} onChange={(event) => updatePaymentForm(property._id, 'transactionId', event.target.value)} style={inputStyle} placeholder="Txn ID" />
-                      </label>
-                      <button type="button" onClick={() => submitTenantPaymentFromDashboard(property._id, property.monthlyRentPerSeat, seats)} style={ctaButtonStyle}>Submit monthly payment</button>
+                      {payment.paymentSlipUrl ? <a href={payment.paymentSlipUrl} target="_blank" rel="noreferrer" style={assetLinkStyle}>View payment slip</a> : null}
+                      {payment.paymentSlipQr ? <p style={smallTextStyle}>QR Auth: {payment.paymentSlipQr}</p> : null}
                     </>
+                  ) : (
+                    <button type="button" onClick={() => openSecurePaymentModal(property, application)} style={ctaButtonStyle}>Start secure payment</button>
                   )}
                 </div>
               );
@@ -572,6 +732,113 @@ const DashboardPage = () => {
           </article>
         </section>
       )}
+
+      {profile.role === 'Tenant' && securePaymentModal.open && (
+        <div style={modalOverlayStyle} role="dialog" aria-modal="true" aria-label="Secure payment flow">
+          <div style={modalCardStyle}>
+            <h3 style={{ margin: 0 }}>Secure seat payment</h3>
+            <p style={smallTextStyle}>{securePaymentModal.title} · ৳{securePaymentModal.amount}</p>
+            <p style={smallTextStyle}>SSL step {securePaymentModal.step} of 4</p>
+
+            {securePaymentModal.step === 1 && (
+              <>
+                <label style={fieldStyle}>
+                  <span>Payment month</span>
+                  <input type="month" value={securePaymentModal.month} onChange={(event) => updateSecurePaymentField('month', event.target.value)} style={inputStyle} />
+                </label>
+                <label style={fieldStyle}>
+                  <span>Payment method</span>
+                  <select value={securePaymentModal.provider} onChange={(event) => updateSecurePaymentField('provider', event.target.value)} style={inputStyle}>
+                    <option value="Nagad">Nagad</option>
+                    <option value="bKash">bKash</option>
+                    <option value="Rocket">Rocket</option>
+                    <option value="UPay">UPay</option>
+                    <option value="Bank">Local Bank</option>
+                  </select>
+                </label>
+                <label style={fieldStyle}>
+                  <span>Mobile account number</span>
+                  <input value={securePaymentModal.mobileAccountNo} onChange={(event) => updateSecurePaymentField('mobileAccountNo', event.target.value)} style={inputStyle} placeholder="01XXXXXXXXX" />
+                </label>
+              </>
+            )}
+
+            {securePaymentModal.step === 2 && (
+              <label style={fieldStyle}>
+                <span>Enter OTP</span>
+                <input value={securePaymentModal.otp} onChange={(event) => updateSecurePaymentField('otp', event.target.value)} style={inputStyle} placeholder="6-digit OTP" />
+              </label>
+            )}
+
+            {securePaymentModal.step === 3 && (
+              <label style={fieldStyle}>
+                <span>Enter payment PIN</span>
+                <input type="password" value={securePaymentModal.pin} onChange={(event) => updateSecurePaymentField('pin', event.target.value)} style={inputStyle} placeholder="PIN" />
+              </label>
+            )}
+
+            {securePaymentModal.step === 4 && (
+              <>
+                <label style={fieldStyle}>
+                  <span>Upload payment slip (with QR visible)</span>
+                  <input type="file" accept="image/*" onChange={uploadPaymentSlipFile} style={inputStyle} disabled={isUploadingPaymentSlip} />
+                </label>
+                <p style={smallTextStyle}>{isUploadingPaymentSlip ? 'Uploading slip...' : securePaymentModal.paymentSlipUrl ? 'Slip uploaded and ready for secure payment.' : 'Upload the slip image to continue.'}</p>
+                {securePaymentModal.paymentSlipUrl ? <a href={securePaymentModal.paymentSlipUrl} target="_blank" rel="noreferrer" style={assetLinkStyle}>Preview uploaded payment slip</a> : null}
+              </>
+            )}
+
+            <div style={actionRowStyle}>
+              <button type="button" onClick={closeSecurePaymentModal} style={ghostButtonStyle} disabled={isSubmittingSecurePayment}>Cancel</button>
+              {securePaymentModal.step > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setSecurePaymentModal((previous) => ({ ...previous, step: Math.max(previous.step - 1, 1) }))}
+                  style={ghostButtonStyle}
+                  disabled={isSubmittingSecurePayment}
+                >
+                  Back
+                </button>
+              )}
+              {securePaymentModal.step < 4 ? (
+                <button type="button" onClick={proceedSecurePaymentStep} style={ctaButtonStyle} disabled={isSubmittingSecurePayment}>Proceed</button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={submitSecurePaymentFromDashboard}
+                  style={approveButtonStyle}
+                  disabled={isSubmittingSecurePayment || isUploadingPaymentSlip || !securePaymentModal.paymentSlipUrl}
+                >
+                  Complete payment
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {profile.role === 'Admin' && removeModal.open && (
+        <div style={modalOverlayStyle} role="dialog" aria-modal="true" aria-label="Remove listing with feedback">
+          <div style={modalCardStyle}>
+            <h3 style={{ margin: 0 }}>Remove listing</h3>
+            <p style={smallTextStyle}>You are removing: <strong>{removeModal.title}</strong></p>
+            <label style={fieldStyle}>
+              <span>Feedback for landlord</span>
+              <textarea
+                value={removeModal.feedback}
+                onChange={(event) => updateRemoveFeedback(event.target.value)}
+                style={textareaStyle}
+                rows={4}
+                placeholder="Explain clearly why this listing is being removed..."
+              />
+            </label>
+            <div style={actionRowStyle}>
+              <button type="button" onClick={closeAdminRemoveModal} style={ghostButtonStyle} disabled={isRemovingProperty}>Cancel</button>
+              <button type="button" onClick={confirmAdminRemoveProperty} style={rejectButtonStyle} disabled={isRemovingProperty}>Confirm remove</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -591,6 +858,9 @@ const eyebrowStyle = { color: '#ffd166', fontWeight: 700, textTransform: 'upperc
 const ctaLinkStyle = { display: 'inline-flex', marginTop: '12px', padding: '10px 14px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', color: '#09111b', fontWeight: 700, textDecoration: 'none' };
 const listItemStyle = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.08)' };
 const smallTextStyle = { margin: '4px 0 0', color: 'rgba(255,255,255,0.66)', fontSize: '0.92rem' };
+const rejectionFeedbackStyle = { margin: '8px 0 0', color: '#ffb4b4', fontSize: '0.9rem', lineHeight: 1.45 };
+const assetLinkRowStyle = { display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' };
+const assetLinkStyle = { color: '#ffd166', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem' };
 const mutedTextStyle = { color: 'rgba(255,255,255,0.66)' };
 const actionRowStyle = { display: 'flex', gap: '8px', flexWrap: 'wrap' };
 const fieldStyle = { display: 'grid', gap: '8px', marginTop: '10px', color: 'rgba(255,255,255,0.82)' };
@@ -598,9 +868,13 @@ const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '12px', 
 const listBlockStyle = { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' };
 const alertTextStyle = { marginTop: '10px', padding: '10px 12px', borderRadius: '12px', background: 'rgba(255, 209, 102, 0.12)', color: '#ffd166', border: '1px solid rgba(255, 209, 102, 0.35)' };
 const ctaButtonStyle = { marginTop: '12px', border: '0', padding: '10px 12px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', color: '#09111b', fontWeight: 700 };
+const ghostButtonStyle = { border: '1px solid rgba(255,255,255,0.2)', padding: '8px 12px', borderRadius: '999px', background: 'transparent', color: '#f6f1e8', fontWeight: 700 };
 const approveButtonStyle = { border: '0', padding: '8px 12px', borderRadius: '999px', background: 'rgba(56,161,105,0.2)', color: '#8ff0b4', fontWeight: 700 };
 const rejectButtonStyle = { border: '0', padding: '8px 12px', borderRadius: '999px', background: 'rgba(229,62,62,0.2)', color: '#ff9b9b', fontWeight: 700 };
 const overdueTextStyle = { margin: '4px 0 0', color: '#ff9b9b', fontSize: '0.92rem' };
+const modalOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'grid', placeItems: 'center', padding: '16px', zIndex: 1000 };
+const modalCardStyle = { width: 'min(560px, 100%)', ...panelStyle, border: '1px solid rgba(255,255,255,0.18)' };
+const textareaStyle = { width: '100%', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(8,12,18,0.78)', color: '#fff', resize: 'vertical' };
 const badgeStyle = (status) => ({
   padding: '8px 10px',
   borderRadius: '999px',

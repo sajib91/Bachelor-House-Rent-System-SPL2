@@ -10,12 +10,14 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001
 
 const RegisterPage = () => {
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
-    defaultValues: { role: 'Tenant', verificationType: 'Student ID' },
+    defaultValues: { role: 'Tenant', verificationType: 'Student ID', instituteType: 'University' },
   });
   const navigate = useNavigate();
   const [serverError, setServerError] = useState(null);
   const [idDocumentUrl, setIdDocumentUrl] = useState('');
+  const [profilePictureUrl, setProfilePictureUrl] = useState('');
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [uploadingProfilePicture, setUploadingProfilePicture] = useState(false);
   const passwordValue = watch('password', '');
   const selectedRole = watch('role', 'Tenant');
 
@@ -40,6 +42,24 @@ const RegisterPage = () => {
       toast.error(error.response?.data?.message || 'Unable to upload ID document.');
     } finally {
       setUploadingDocument(false);
+    }
+  };
+
+  const handleProfilePictureUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingProfilePicture(true);
+    try {
+      const formData = new FormData();
+      formData.append('photos', file);
+      const response = await axios.post(`${API_BASE_URL}/upload`, formData);
+      setProfilePictureUrl(response.data.urls?.[0] || '');
+      toast.success('Profile picture uploaded successfully.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to upload profile picture.');
+    } finally {
+      setUploadingProfilePicture(false);
     }
   };
 
@@ -68,6 +88,10 @@ const RegisterPage = () => {
         phoneNumber: data.phoneNumber,
         password: data.password,
         role: data.role,
+        instituteType: data.role === 'Tenant' ? data.instituteType : undefined,
+        instituteName: data.role === 'Tenant' ? data.instituteName : undefined,
+        hometown: data.role === 'Tenant' ? data.hometown : undefined,
+        profilePictureUrl,
         verificationType: data.verificationType,
         verificationDocumentUrl: idDocumentUrl,
       });
@@ -103,6 +127,12 @@ const RegisterPage = () => {
           {serverError && <p style={errorTextStyle}>{serverError}</p>}
 
           <div style={inputGridStyle}>
+            <Field label="Registration role" error={errors.role?.message}>
+              <select {...register('role', { required: 'Choose your role' })} style={inputStyle}>
+                <option value="Tenant">Tenant</option>
+                <option value="Landlord">Landlord</option>
+              </select>
+            </Field>
             <Field label="Full name" error={errors.fullName?.message}>
               <input {...register('fullName', { required: 'Full name is required' })} style={inputStyle} placeholder="Md. Rahim" />
             </Field>
@@ -134,11 +164,51 @@ const RegisterPage = () => {
                 placeholder="01XXXXXXXXX"
               />
             </Field>
-            <Field label="Login role" error={errors.role?.message}>
-              <select {...register('role', { required: 'Choose your role' })} style={inputStyle}>
-                <option value="Tenant">Tenant</option>
-                <option value="Landlord">Landlord</option>
-              </select>
+            {selectedRole === 'Tenant' && (
+              <Field label="Institute type" error={errors.instituteType?.message}>
+                <select {...register('instituteType', { required: 'Institute type is required for tenants' })} style={inputStyle}>
+                  <option value="School">School</option>
+                  <option value="College">College</option>
+                  <option value="University">University</option>
+                  <option value="Other Institute">Other's Institute</option>
+                </select>
+              </Field>
+            )}
+            {selectedRole === 'Tenant' && (
+              <Field label="Institute name" error={errors.instituteName?.message}>
+                <input
+                  {...register('instituteName', {
+                    required: 'Institute name is required for tenants',
+                    minLength: { value: 2, message: 'Institute name must be at least 2 characters.' },
+                    maxLength: { value: 160, message: 'Institute name cannot exceed 160 characters.' },
+                  })}
+                  style={inputStyle}
+                  placeholder="Dhaka University"
+                />
+              </Field>
+            )}
+            {selectedRole === 'Tenant' && (
+              <Field label="Home town" error={errors.hometown?.message}>
+                <input
+                  {...register('hometown', {
+                    required: 'Home town is required for tenants',
+                    minLength: { value: 2, message: 'Home town must be at least 2 characters.' },
+                    maxLength: { value: 120, message: 'Home town cannot exceed 120 characters.' },
+                  })}
+                  style={inputStyle}
+                  placeholder="Dhaka"
+                />
+              </Field>
+            )}
+            <Field label="Profile picture" error={errors.profilePicture?.message}>
+              <input type="file" accept="image/*" onChange={handleProfilePictureUpload} style={{ ...inputStyle, padding: '10px 12px' }} />
+              <small style={helperTextStyle}>
+                {uploadingProfilePicture
+                  ? 'Uploading profile picture...'
+                  : profilePictureUrl
+                    ? 'Profile picture uploaded and attached.'
+                    : 'Upload your profile photo (optional).'}
+              </small>
             </Field>
             <Field label="Verification type" error={errors.verificationType?.message}>
               <select {...register('verificationType', { required: 'Choose a verification type' })} style={inputStyle}>

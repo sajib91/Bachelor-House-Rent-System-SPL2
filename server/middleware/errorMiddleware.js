@@ -7,20 +7,20 @@ const errorHandler = (err, req, res, next) => {
   let statusCode = err.statusCode || (res.statusCode === 200 ? 500 : res.statusCode);
   let message = err.message || 'Internal Server Error';
 
-  // Mongoose Bad ObjectId Error
+  // Invalid ID format fallback
   if (err.name === 'CastError' && err.kind === 'ObjectId') {
     statusCode = 404; // Not found
     message = `Resource not found. Invalid ID format.`;
   }
 
-  // Mongoose Duplicate Key Error (e.g., unique email or username violation)
+  // Duplicate key error (e.g., unique email or username violation)
   if (err.code === 11000) {
     statusCode = 400; // Bad request
     const field = Object.keys(err.keyValue)[0];
     message = `Duplicate field value entered for '${field}'. Please use another value.`;
   }
 
-  // Mongoose Validation Error (already handled in controller, but can be a fallback)
+  // Validation error (already handled in controller, but can be a fallback)
   if (err.name === 'ValidationError') {
     statusCode = 400;
     message = Object.values(err.errors).map(val => val.message).join(', ');

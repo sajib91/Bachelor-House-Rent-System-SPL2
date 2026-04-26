@@ -17,6 +17,7 @@ router.get('/tenant/reminders', protect, authorizeRoles('Tenant'), propertyContr
 // Admin publication approval routes
 router.get('/admin/pending-publications', protect, authorizeRoles('Admin'), propertyController.getPendingPublications);
 router.patch('/admin/:id/publication', protect, authorizeRoles('Admin'), propertyController.reviewPropertyPublication);
+router.patch('/admin/:id/remove', protect, authorizeRoles('Admin'), propertyController.adminRemoveProperty);
 router.get('/admin/insights', protect, authorizeRoles('Admin'), propertyController.getAdminInsights);
 router.get('/admin/intelligence-thresholds', protect, authorizeRoles('Admin'), propertyController.getIntelligenceThresholds);
 router.patch('/admin/intelligence-thresholds', protect, authorizeRoles('Admin'), propertyController.updateIntelligenceThresholds);
@@ -31,6 +32,9 @@ router.post('/', protect, propertyController.addProperty);
 
 // UPDATE a seat listing
 router.patch('/:id', protect, propertyController.updateProperty);
+
+// DELETE a seat listing (landlord owner only)
+router.delete('/:id', protect, propertyController.deleteProperty);
 
 // Seat request and approval flow
 router.post('/:id/apply', protect, propertyController.applyForSeat);

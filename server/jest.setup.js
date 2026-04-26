@@ -1,27 +1,17 @@
-// backend/jest.setup.js
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const mongoose = require('mongoose');
-
-let mongoServer;
+const { ensureDatabaseAndUsersTable, getPool } = require('./config/sqlPool');
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const mongoUri = mongoServer.getUri()
-  await mongoose.connect(mongoUri);
-// console.log(In-memory MongoDB connected at ${mongoUri});
+  await ensureDatabaseAndUsersTable();
+  const pool = getPool();
+  await pool.query('SELECT 1');
 });
 
-    // Clear all test data after every test.
-    afterEach(async () => {
-      const collections = mongoose.connection.collections;
-      for (const key in collections) {
-        const collection = collections[key];
-        await collection.deleteMany({});
-      }
-    });
+afterEach(async () => {
+  const pool = getPool();
+  await pool.query('DELETE FROM users');
+});
 
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-      // console.log('In-memory MongoDB disconnected and stopped.');
-    });
+afterAll(async () => {
+  const pool = getPool();
+  await pool.end();
+});

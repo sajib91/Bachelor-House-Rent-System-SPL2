@@ -2,7 +2,7 @@
 
 **Version: 1.0.0**
 **Last Updated: June 10, 2025**
-**Primary Technologies: Node.js, Express.js, MongoDB (with Mongoose), JWT**
+**Primary Technologies: Node.js, Express.js, MySQL, JWT**
 
 ---
 
@@ -57,7 +57,7 @@ The API is designed to be consumed by a modern client application (e.g., the [To
 
 #### Contact Form Management:
 * **Message Submission:** Dedicated API endpoint to receive user contact messages.
-* **Database Persistence:** Stores all contact messages securely in MongoDB.
+* **Database Persistence:** Stores all contact messages securely in MySQL.
 * **Email Notifications:** Sends automated confirmation emails to the user and notification emails to the configured administrator upon successful submission.
 
 #### Blog Management:
@@ -88,8 +88,8 @@ The API is designed to be consumed by a modern client application (e.g., the [To
 
 * **Runtime Environment:** Node.js (v18.x or later)
 * **Web Framework:** Express.js
-* **Database:** MongoDB (NoSQL, typically hosted on MongoDB Atlas)
-* **ODM (Object Data Modeling):** Mongoose
+* **Database:** MySQL 8+
+* **Data Access Layer:** SQL-backed models via `mysql2`
 * **Authentication:** JSON Web Tokens (JWT) (`jsonwebtoken`)
 * **Password Hashing:** `bcryptjs`
 * **File Uploads:** Multer (for handling multipart/form-data, specifically property images)
@@ -100,7 +100,7 @@ The API is designed to be consumed by a modern client application (e.g., the [To
 * **Security:** `helmet`, `express-rate-limit`
 * **HTTP Logging:** `morgan`
 * **CORS Handling:** `cors`
-* **Testing:** Jest, Supertest, MongoDB Memory Server
+* **Testing:** Jest, Supertest
 
 ---
 
@@ -109,7 +109,7 @@ The API is designed to be consumed by a modern client application (e.g., the [To
 Before you begin, ensure you have the following installed on your local development machine:
 
 * **Node.js:** Version 18.x or higher. Download from [nodejs.org](https://nodejs.org/). (npm is included with Node.js installation).
-* **MongoDB:** Version 5.x or higher, or preferably use a cloud service like [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
+* **MySQL:** Version 8.x or higher.
 * **Git:** For cloning the repository. Download from [git-scm.com](https://git-scm.com/).
 * **(Optional) A REST Client:** Tools like Postman, Insomnia, or the VS Code REST Client extension for testing API endpoints.
 
@@ -139,7 +139,7 @@ cp .env.example .env
 Edit .env:
 Open the newly created .env file and fill in the required variables. Refer to the Environment Variables section for detailed descriptions of each variable.
 
-Ensure MONGODB_URI points to your MongoDB instance (local or Atlas).
+Ensure DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, and DB_NAME are correctly configured for your MySQL instance.
 Set a strong, unique JWT_SECRET.
 Configure email settings (use Ethereal.email credentials for development/testing).
 Set FRONTEND_URL to your frontend application's URL (e.g., http://localhost:5173 for local development).
@@ -158,7 +158,7 @@ Development Mode (with Nodemon for auto-restarts):
 
 npm run dev
 ```
-The server will typically start on the port specified in your .env file (default: 5001). You should see console logs indicating server startup and MongoDB connection status.
+The server will typically start on the port specified in your .env file (default: 5001). You should see console logs indicating server startup and MySQL connection status.
 
 Production Mode:
 
@@ -220,7 +220,11 @@ The following environment variables are used by the application. Create a .env f
 
 NODE_ENV: Application environment (development, production, test).
 BACKEND_PORT: Port the backend server will run on (e.g., 5001).
-MONGODB_URI: Connection string for your MongoDB database (e.g., from MongoDB Atlas).
+DB_HOST: MySQL host (e.g., 127.0.0.1).
+DB_PORT: MySQL port (e.g., 3306).
+DB_USER: MySQL username.
+DB_PASSWORD: MySQL password.
+DB_NAME: MySQL database name (e.g., to_let_globe).
 JWT_SECRET: A long, random, and strong secret key for signing JSON Web Tokens. You can generate one using node -e "console.log(require('crypto').randomBytes(32).toString('hex'))".
 JWT_EXPIRES_IN: Expiration time for JWTs (e.g., 1h for 1 hour, 7d for 7 days).
 FRONTEND_URL: Base URL of your frontend application (used for generating email links for verification/password reset, e.g., http://localhost:5173 for local development, or your Vercel URL for production).
@@ -269,7 +273,8 @@ server/
 │       └── contactRoutes.test.js
 │       └── propertyRoutes.test.js
 ├── config/                     # Configuration files (e.g., database connection)
-│   └── db.js                   # MongoDB connection logic
+│   └── db.js                   # MySQL connection bootstrap logic
+│   └── sqlPool.js              # MySQL pool and schema bootstrap
 │   └── cloudinaryConfig.js     # Cloudinary connection logic
 ├── controllers/                # Business logic and request handlers
 │   ├── authController.js       # User authentication logic
@@ -281,7 +286,7 @@ server/
 │   ├── errorMiddleware.js      # Centralized error handling
 │   ├── uploadMiddleware.js     # Multer configuration for file uploads (e.g., property images)
 │   ├── validationMiddleware.js # Input validation via express-validator
-├── models/                     # Mongoose schemas and models
+├── models/                     # SQL-backed model layer
 │   ├── User.js                 # User schema
 │   ├── Blog.js                 # Blog post schema
 │   └── Contact.js              # Contact message schema
@@ -353,7 +358,7 @@ Principle of Least Privilege (via Roles): The authorizeRoles middleware ensures 
 
 ### 11. Testing
 
-This project utilizes Jest for unit and integration testing. Supertest is used for making HTTP requests to test API endpoints, and MongoDB Memory Server provides an isolated, in-memory MongoDB instance for tests, ensuring tests are fast and don't affect your development database.
+This project utilizes Jest for unit and integration testing. Supertest is used for making HTTP requests to test API endpoints.
 
 Running Unit/Integration Tests
 

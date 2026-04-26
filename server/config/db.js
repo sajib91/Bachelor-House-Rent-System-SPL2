@@ -1,17 +1,18 @@
-const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const { ensureDatabaseAndUsersTable, initPool } = require('./sqlPool');
 
-dotenv.config(); // Ensure environment variables are loaded
+dotenv.config();
 
 const connectDB = async () => {
   try {
-    // process.env.MONGODB_URI will be read from your .env file
-    const conn = await mongoose.connect(process.env.MONGODB_URI);
-
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    await ensureDatabaseAndUsersTable();
+    const pool = initPool();
+    await pool.query('SELECT 1');
+    const dbName = process.env.DB_NAME || 'to_let_globe';
+    const host = process.env.DB_HOST || '127.0.0.1';
+    console.log(`MySQL Connected: ${host}/${dbName}`);
   } catch (error) {
-    console.error(`Error connecting to MongoDB: ${error.message}`);
-    // Exit process with failure if DB connection fails
+    console.error(`Error connecting to MySQL: ${error.message}`);
     process.exit(1);
   }
 };

@@ -10,7 +10,7 @@ exports.submitContactForm = async (req, res, next) => {
 
     try {
         // Create new contact entry in DB
-        // Mongoose will handle phone: undefined -> default: null
+        // SQL model will normalize optional phone values.
         const contactEntry = await Contact.create({
             name,
             email,
@@ -84,7 +84,7 @@ exports.submitContactForm = async (req, res, next) => {
 
     } catch (error) {
         console.error('Error submitting contact form:', error);
-        // Handle Mongoose validation errors specifically
+        // Handle model-level validation errors.
         if (error.name === 'ValidationError') {
             const errors = Object.values(error.errors).map(err => err.message);
             return res.status(400).json({

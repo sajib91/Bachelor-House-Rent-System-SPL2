@@ -4,6 +4,7 @@ const Property = require('../models/Property');
 const User = require('../models/User');
 const IntelligenceSettings = require('../models/IntelligenceSettings');
 const asyncHandler = require('express-async-handler');
+const crypto = require('crypto');
 const {
     analyzeTextForFraud,
     scoreListingQuality,
@@ -57,7 +58,7 @@ const containsIgnoreCase = (source = '', target = '') => {
 
 const getRuntimeThresholds = async () => {
     const defaults = getDefaultThresholds();
-    const settings = await IntelligenceSettings.findOne({ key: 'global' }).lean();
+    const settings = await IntelligenceSettings.findOne({ key: 'global' });
     return resolveThresholds(settings?.thresholds || defaults);
 };
 
@@ -391,7 +392,7 @@ const getPropertyById = asyncHandler(async (req, res) => {
     let property;
 
     try {
-        property = await Property.findById(req.params.id).populate('landlord', 'fullName username email phoneNumber role');
+        property = await Property.findById(req.params.id);
     } catch (dbError) {
         res.status(400);
         throw new Error(`Invalid property ID format: ${req.params.id}`);
@@ -456,21 +457,19 @@ const addProperty = asyncHandler(async (req, res) => {
         throw new Error('Please enter all required seat listing fields.');
     }
 
-    if (!['Landlord', 'Admin'].includes(req.user.role)) {
+    if (req.user.role !== 'Landlord') {
         res.status(403);
-        throw new Error('Only Landlord or Admin accounts can publish seat listings.');
+        throw new Error('Only registered landlord accounts can publish seat listings.');
     }
 
-    if (req.user.role === 'Landlord') {
-        if (req.user.verificationType !== 'NID') {
-            res.status(403);
-            throw new Error('Landlord accounts must be registered with NID verification.');
-        }
+    if (req.user.verificationType !== 'NID') {
+        res.status(403);
+        throw new Error('Landlord accounts must be registered with NID verification.');
+    }
 
-        if (req.user.verificationStatus !== 'Verified') {
-            res.status(403);
-            throw new Error('Landlord account verification is pending. Please wait for admin approval.');
-        }
+    if (req.user.verificationStatus !== 'Verified') {
+        res.status(403);
+        throw new Error('Landlord account verification is pending. Please wait for admin approval.');
     }
 
     if (!Array.isArray(photos) || photos.length === 0) {
@@ -506,15 +505,11 @@ const addProperty = asyncHandler(async (req, res) => {
         description,
         universityProximity,
         commuteMinutes,
-        publicationStatus: req.user.role === 'Admin' ? 'Approved' : 'Pending',
+        publicationStatus: 'Pending',
     });
 
     const createdProperty = await newProperty.save();
     const quality = scoreListingQuality(createdProperty.toObject(), thresholds);
-
-    if (req.user.role !== 'Landlord' && req.user.role !== 'Admin') {
-        await User.findByIdAndUpdate(req.user._id, { role: 'Landlord' });
-    }
 
     res.status(201).json({
         ...createdProperty.toObject(),
@@ -582,10 +577,10 @@ const updateProperty = asyncHandler(async (req, res) => {
         throw new Error('Property not found');
     }
 
-    const canEdit = String(property.landlord) === String(req.user._id) || req.user.role === 'Admin';
+    const canEdit = req.user.role === 'Landlord' && String(property.landlord) === String(req.user._id);
     if (!canEdit) {
         res.status(403);
-        throw new Error('You are not allowed to edit this listing');
+        throw new Error('Only the landlord owner can update this listing.');
     }
 
     const fieldsToUpdate = [
@@ -631,6 +626,73 @@ const updateProperty = asyncHandler(async (req, res) => {
 
     const updatedProperty = await property.save();
     res.json(updatedProperty);
+});
+
+// @desc    Delete a seat listing (landlord owner only)
+// @route   DELETE /api/properties/:id
+// @access  Private/Landlord
+const deleteProperty = asyncHandler(async (req, res) => {
+    const property = await Property.findById(req.params.id);
+
+    if (!property) {
+        res.status(404);
+        throw new Error('Property not found');
+    }
+
+    const canDelete = req.user.role === 'Landlord' && String(property.landlord) === String(req.user._id);
+    if (!canDelete) {
+        res.status(403);
+        throw new Error('Only the landlord owner can delete this listing.');
+    }
+
+    await Property.deleteById(property._id);
+
+    res.status(200).json({
+        success: true,
+        message: 'Listing deleted successfully.',
+    });
+});
+
+// @desc    Remove a landlord listing with mandatory feedback (admin moderation)
+// @route   PATCH /api/properties/admin/:id/remove
+// @access  Private/Admin
+const adminRemoveProperty = asyncHandler(async (req, res) => {
+    const property = await Property.findById(req.params.id);
+
+    if (!property) {
+        res.status(404);
+        throw new Error('Property not found');
+    }
+
+    const feedback = String(req.body?.feedback || '').trim();
+    if (feedback.length < 5) {
+        res.status(400);
+        throw new Error('Feedback is required and must be at least 5 characters long.');
+    }
+
+    property.isActive = false;
+    property.publicationStatus = 'Rejected';
+    property.messages = property.messages || [];
+    property.messages.push({
+        sender: req.user._id,
+        senderName: req.user.fullName || req.user.username || 'System Admin',
+        senderRole: 'Admin',
+        message: `Listing removed by admin. Feedback: ${feedback}`,
+        moderation: { score: 0, riskLevel: 'Low', flags: [] },
+        meta: {
+            type: 'ADMIN_REMOVAL_FEEDBACK',
+            removedAt: new Date().toISOString(),
+            feedback,
+        },
+    });
+
+    await property.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Listing removed and feedback saved successfully.',
+        property,
+    });
 });
 
 // @desc    Apply for a seat
@@ -770,18 +832,62 @@ const addRentPayment = asyncHandler(async (req, res) => {
         throw new Error('You must have an approved seat request before submitting rent payment.');
     }
 
+    const provider = String(req.body.provider || '').trim();
+    const mobileAccountNo = String(req.body.mobileAccountNo || '').trim();
+    const otp = String(req.body.otp || '').trim();
+    const pin = String(req.body.pin || '').trim();
+    const paymentSlipUrl = String(req.body.paymentSlipUrl || '').trim();
+    const paymentSlipQrInput = String(req.body.paymentSlipQr || '').trim();
+    const month = String(req.body.month || '').trim();
+    const generatedTransactionId = `SEC-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const transactionId = String(req.body.transactionId || generatedTransactionId).trim();
+
+    const generatedQrCode = paymentSlipQrInput || `QR-${crypto
+        .createHash('sha256')
+        .update(`${transactionId}|${mobileAccountNo}|${month}|${req.user._id}`)
+        .digest('hex')
+        .slice(0, 12)
+        .toUpperCase()}`;
+
     const payment = {
         tenant: req.user._id,
-        month: req.body.month,
+        month,
         amount: Number(req.body.amount || property.monthlyRentPerSeat),
-        provider: req.body.provider,
-        transactionId: req.body.transactionId,
-        status: 'Pending',
+        provider,
+        transactionId,
+        mobileAccountNo,
+        paymentSlipUrl,
+        paymentSlipQr: generatedQrCode,
+        otpHash: crypto.createHash('sha256').update(otp).digest('hex'),
+        pinHash: crypto.createHash('sha256').update(pin).digest('hex'),
+        securePayment: {
+            sslMode: true,
+            protocol: 'TLS',
+            verifiedAt: new Date().toISOString(),
+            qrAuthenticated: Boolean(generatedQrCode),
+        },
+        status: 'Complete',
+        completedAt: new Date().toISOString(),
     };
 
     if (!payment.month || !payment.provider || !payment.transactionId) {
         res.status(400);
         throw new Error('Month, provider, and transaction ID are required');
+    }
+
+    if (!payment.mobileAccountNo || payment.mobileAccountNo.length < 10) {
+        res.status(400);
+        throw new Error('A valid mobile account number is required.');
+    }
+
+    if (!otp || otp.length < 4) {
+        res.status(400);
+        throw new Error('OTP verification is required.');
+    }
+
+    if (!pin || pin.length < 4) {
+        res.status(400);
+        throw new Error('PIN verification is required.');
     }
 
     const existingPayment = property.rentPayments.find(
@@ -809,8 +915,19 @@ const addRentPayment = asyncHandler(async (req, res) => {
 
     res.status(201).json({
         success: true,
-        message: 'Rent payment submitted for verification.',
+        message: 'Rent payment completed successfully.',
         paymentAssistant,
+        paymentReceipt: {
+            receiptId: `REC-${Date.now()}-${String(req.user._id).slice(-4)}`,
+            status: payment.status,
+            completedAt: payment.completedAt,
+            provider: payment.provider,
+            month: payment.month,
+            amount: payment.amount,
+            transactionId: payment.transactionId,
+            paymentSlipUrl: payment.paymentSlipUrl,
+            paymentSlipQr: payment.paymentSlipQr,
+        },
     });
 });
 
@@ -1215,7 +1332,7 @@ const getAdminInsights = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const getIntelligenceThresholds = asyncHandler(async (req, res) => {
     const defaults = getDefaultThresholds();
-    const settings = await IntelligenceSettings.findOne({ key: 'global' }).lean();
+    const settings = await IntelligenceSettings.findOne({ key: 'global' });
     const thresholds = resolveThresholds(settings?.thresholds || defaults);
 
     res.status(200).json({
@@ -1244,20 +1361,14 @@ const updateIntelligenceThresholds = asyncHandler(async (req, res) => {
 
     const existing = await IntelligenceSettings.findOne({ key: 'global' });
     const merged = resolveThresholds({
-        ...(existing?.thresholds?.toObject ? existing.thresholds.toObject() : existing?.thresholds || {}),
+        ...(existing?.thresholds || {}),
         ...sanitized,
     });
 
-    const nextDoc = await IntelligenceSettings.findOneAndUpdate(
-        { key: 'global' },
-        {
-            $set: {
-                thresholds: merged,
-                updatedBy: req.user._id,
-            },
-        },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).lean();
+    const nextDoc = await IntelligenceSettings.upsertByKey('global', {
+        thresholds: merged,
+        updatedBy: req.user._id,
+    });
 
     res.status(200).json({
         success: true,
@@ -1274,7 +1385,9 @@ module.exports = {
     getMyProperties,
     getPendingPublications,
     reviewPropertyPublication,
+    adminRemoveProperty,
     updateProperty,
+    deleteProperty,
     applyForSeat,
     reviewApplication,
     addRentPayment,

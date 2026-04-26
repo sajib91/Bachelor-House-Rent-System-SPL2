@@ -26,12 +26,17 @@ const path = require('path'); // For local photo uploads
 // Should be done early, especially before database connections or port configurations
 dotenv.config({ path: './.env' }); // By default, it looks for a .env file in the root of the project
 
-// 3. Import Database Connection Function (we'll create this soon)
+// 3. Import Database Connection Function
 const connectDB = require('./config/db');
 
 // 4. Initialize Express Application
 const app = express(); // Creates an instance of the Express application
 const server = http.createServer(app);
+const isDevelopment = process.env.NODE_ENV !== 'production';
+const disableRateLimitInDev = process.env.RATE_LIMIT_DISABLE_IN_DEV !== 'false';
+
+// Respect reverse proxy IP headers so rate limiting works correctly behind proxies.
+app.set('trust proxy', 1);
 
 // Secure HTTP headers
 app.use(helmet({
@@ -39,7 +44,7 @@ app.use(helmet({
 })); // Sets various HTTP headers to help protect your app
 
 // 5. Connect to Database
-connectDB(); // Call the function to establish MongoDB connection
+connectDB(); // Establish MySQL connection
 
 // 6. Middleware Setup
 // Enable CORS for all routes and origins (for development).
@@ -148,7 +153,7 @@ io.use(async (socket, next) => {
       return next();
     }
 
-    const user = await User.findById(decoded.id).select('_id role');
+    const user = await User.findById(decoded.id);
 
     if (!user) {
       return next(new Error('User not found for realtime connection.'));
@@ -172,7 +177,7 @@ io.on('connection', (socket) => {
     if (!propertyId) return;
 
     try {
-      const property = await Property.findById(propertyId).select('landlord seatApplications messages');
+      const property = await Property.findById(propertyId);
 
       if (!property || !canJoinPropertyRoom(property, socket.data.user)) {
         socket.emit('property:error', { message: 'Not authorized to join this chat room.' });
@@ -225,22 +230,37 @@ app.get('/', (req, res) => {
   res.status(200).json({ message: 'Welcome to the Bachelor House Rent System API!' });
 });
 
-// Apply rate limiting to API routes to prevent abuse
-// You can configure different limiters for different routes if needed
+// Apply rate limiting to API routes to prevent abuse.
+// Keep generic limits looser to support normal multi-tab usage, while sensitive
+// auth routes keep stricter dedicated limits below.
+const apiWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+const apiMaxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS)
+  || (process.env.NODE_ENV === 'development' ? 1000 : 300);
+
 const apiLimiter = rateLimit({
-  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // Limit each IP to 100 requests per windowMs
+  windowMs: apiWindowMs,
+  max: apiMaxRequests,
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes.' },
+  // Avoid double limiting auth routes (already guarded by authLimiter)
+  // and allow image upload workflows to complete smoothly.
+  skip: (req) => req.path.startsWith('/auth/login')
+    || req.path.startsWith('/auth/forgot-password')
+    || req.path.startsWith('/upload')
+    || (isDevelopment && disableRateLimitInDev),
+  message: {
+    success: false,
+    message: `Too many requests from this IP, please try again after ${Math.max(1, Math.round(apiWindowMs / 60000))} minutes.`,
+  },
 });
 
 // For more sensitive routes like login or password reset, stricter limits reduce brute-force attacks.
 const authLimiter = rateLimit({
     windowMs: 10 * 60 * 1000, // 10 minutes
-    max: 10, // Limit each IP to 10 auth attempts per window
+  max: isDevelopment ? 500 : 10, // Keep auth strict in production, relaxed in local development
     message: { success: false, message: 'Too many authentication attempts from this IP, please try again after 10 minutes.' },
     skipSuccessfulRequests: true, // Don't count successful auths against the limit
+  skip: () => isDevelopment && disableRateLimitInDev,
 });
 
 app.use('/api', apiLimiter); // Apply to all routes starting with /api

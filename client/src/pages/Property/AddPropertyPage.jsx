@@ -81,7 +81,6 @@ const AddPropertyPage = () => {
         availableSeats: Number(form.availableSeats || form.totalSeats),
         monthlyRentPerSeat: Number(form.monthlyRentPerSeat),
         securityDeposit: Number(form.securityDeposit || 0),
-        commuteMinutes: form.commuteMinutes ? Number(form.commuteMinutes) : undefined,
         mapLocation,
         landlordWhatsapp: form.landlordWhatsapp,
         landlordBkash: form.landlordBkash,
@@ -167,9 +166,6 @@ const AddPropertyPage = () => {
               <option value="Self">Self</option>
             </select>
           </Field>
-          <Field label="Commute minutes">
-            <input type="number" value={form.commuteMinutes} onChange={(event) => updateField('commuteMinutes', event.target.value)} style={inputStyle} min="0" />
-          </Field>
           <Field label="Map link or location">
             <input value={form.mapLabel} onChange={(event) => updateField('mapLabel', event.target.value)} style={inputStyle} placeholder="Paste a Google Maps link or exact location" />
           </Field>
@@ -224,7 +220,7 @@ const AddPropertyPage = () => {
           </div>
           <label style={fieldStyle}>
             <span>Description</span>
-            <textarea value={form.description} onChange={(event) => updateField('description', event.target.value)} style={inputStyle} rows={5} placeholder="Describe the room, safety, meal system, and commute benefits." />
+            <textarea value={form.description} onChange={(event) => updateField('description', event.target.value)} style={inputStyle} rows={5} placeholder="Describe the room, safety, and meal system." />
           </label>
         </div>
 
@@ -260,7 +256,6 @@ const initialFormState = {
     wifi: false,
   },
   description: '',
-  commuteMinutes: '',
   mapLabel: '',
   landlordWhatsapp: '',
   landlordBkash: '',

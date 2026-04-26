@@ -1,182 +1,519 @@
-// backend/models/User.js
-const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { getPool } = require('../config/sqlPool');
 
-const userSchema = new mongoose.Schema(
-  {
-    username: {
-      type: String,
-      trim: true,
-      unique: true,
-      sparse: true,
-      minlength: [3, 'Username must be at least 3 characters long'],
-    },
-    fullName: {
-      type: String,
-      trim: true,
-    },
-    email: {
-      type: String,
-      required: [true, 'Email is required'],
-      unique: true,
-      trim: true,
-      lowercase: true,
-      match: [/\S+@\S+.\S+/, 'Please use a valid email address'],
-    },
-    phoneNumber: {
-      type: String,
-      trim: true,
-    },
-    password: {
-      type: String,
-      required: [true, 'Password is required'],
-      minlength: [8, 'Password must be at least 8 characters long'],
-      select: false,
-    },
-    role: {
-      type: String,
-      required: true,
-      enum: {
-        values: ['Tenant', 'Landlord', 'Admin', 'Content Creator', 'User', 'Owner'],
-        message: '{VALUE} is not a supported role',
+const USER_COLUMNS = [
+  'id',
+  'username',
+  'fullName',
+  'email',
+  'phoneNumber',
+  'password',
+  'role',
+  'isVerified',
+  'verificationStatus',
+  'verificationType',
+  'verificationDocumentUrl',
+  'verificationToken',
+  'verificationTokenExpires',
+  'passwordResetToken',
+  'passwordResetExpires',
+  'passwordResetOtp',
+  'passwordResetOtpExpires',
+  'passwordResetOtpRequestedAt',
+  'passwordResetOtpRequestCount',
+  'passwordResetOtpWindowStartedAt',
+  'profileSummary',
+  'instituteType',
+  'instituteName',
+  'hometown',
+  'profilePictureUrl',
+  'verificationFeedback',
+  'verificationReviewedAt',
+  'createdAt',
+  'updatedAt',
+];
+
+const hydrateUser = (row) => {
+  if (!row) return null;
+
+  const user = new User({
+    id: row.id,
+    username: row.username,
+    fullName: row.fullName,
+    email: row.email,
+    phoneNumber: row.phoneNumber,
+    password: row.password,
+    role: row.role,
+    isVerified: Boolean(row.isVerified),
+    verificationStatus: row.verificationStatus,
+    verificationType: row.verificationType,
+    verificationDocumentUrl: row.verificationDocumentUrl,
+    verificationToken: row.verificationToken,
+    verificationTokenExpires: row.verificationTokenExpires,
+    passwordResetToken: row.passwordResetToken,
+    passwordResetExpires: row.passwordResetExpires,
+    passwordResetOtp: row.passwordResetOtp,
+    passwordResetOtpExpires: row.passwordResetOtpExpires,
+    passwordResetOtpRequestedAt: row.passwordResetOtpRequestedAt,
+    passwordResetOtpRequestCount: row.passwordResetOtpRequestCount,
+    passwordResetOtpWindowStartedAt: row.passwordResetOtpWindowStartedAt,
+    profileSummary: row.profileSummary,
+    instituteType: row.instituteType,
+    instituteName: row.instituteName,
+    hometown: row.hometown,
+    profilePictureUrl: row.profilePictureUrl,
+    verificationFeedback: row.verificationFeedback,
+    verificationReviewedAt: row.verificationReviewedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+
+  user._id = String(row.id);
+  user.__isNew = false;
+  user.__loadedPasswordHash = row.password;
+  return user;
+};
+
+class User {
+  constructor(data = {}) {
+    Object.assign(this, {
+      id: data.id,
+      _id: data.id ? String(data.id) : undefined,
+      username: data.username,
+      fullName: data.fullName,
+      email: data.email,
+      phoneNumber: data.phoneNumber,
+      password: data.password,
+      role: data.role || 'Tenant',
+      isVerified: Boolean(data.isVerified),
+      verificationStatus: data.verificationStatus || 'Pending',
+      verificationType: data.verificationType || 'Student ID',
+      verificationDocumentUrl: data.verificationDocumentUrl,
+      verificationToken: data.verificationToken,
+      verificationTokenExpires: data.verificationTokenExpires,
+      passwordResetToken: data.passwordResetToken,
+      passwordResetExpires: data.passwordResetExpires,
+      passwordResetOtp: data.passwordResetOtp,
+      passwordResetOtpExpires: data.passwordResetOtpExpires,
+      passwordResetOtpRequestedAt: data.passwordResetOtpRequestedAt,
+      passwordResetOtpRequestCount: Number(data.passwordResetOtpRequestCount || 0),
+      passwordResetOtpWindowStartedAt: data.passwordResetOtpWindowStartedAt,
+      profileSummary: data.profileSummary,
+      instituteType: data.instituteType,
+      instituteName: data.instituteName,
+      hometown: data.hometown,
+      profilePictureUrl: data.profilePictureUrl,
+      verificationFeedback: data.verificationFeedback,
+      verificationReviewedAt: data.verificationReviewedAt,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+    });
+
+    this.__isNew = !data.id;
+    this.__loadedPasswordHash = data.password;
+  }
+
+  static get pool() {
+    return getPool();
+  }
+
+  static sanitize(user, includePassword = false) {
+    if (!user) return null;
+    const safeUser = { ...user };
+    if (!includePassword) {
+      delete safeUser.password;
+    }
+    return safeUser;
+  }
+
+  static async findOneByField(field, value, includePassword = false) {
+    const columns = includePassword
+      ? USER_COLUMNS.join(', ')
+      : USER_COLUMNS.filter((column) => column !== 'password').join(', ');
+
+    const [rows] = await this.pool.query(
+      `SELECT ${columns} FROM users WHERE ${field} = ? LIMIT 1`,
+      [value]
+    );
+
+    const hydrated = hydrateUser(rows[0]);
+    if (!hydrated) return null;
+    if (!includePassword) hydrated.password = undefined;
+    return hydrated;
+  }
+
+  static async findOne(criteria = {}, options = {}) {
+    const includePassword = Boolean(options.includePassword);
+
+    if (criteria.email && !criteria.$or) {
+      return this.findOneByField('email', criteria.email, includePassword);
+    }
+
+    if (criteria.username && !criteria.$or) {
+      return this.findOneByField('username', criteria.username, includePassword);
+    }
+
+    if (criteria.phoneNumber && !criteria.$or) {
+      return this.findOneByField('phoneNumber', criteria.phoneNumber, includePassword);
+    }
+
+    if (criteria.verificationToken) {
+      const [rows] = await this.pool.query(
+        `SELECT ${USER_COLUMNS.join(', ')}
+         FROM users
+         WHERE verificationToken = ?
+           AND verificationTokenExpires IS NOT NULL
+           AND verificationTokenExpires > NOW()
+         LIMIT 1`,
+        [criteria.verificationToken]
+      );
+      const hydrated = hydrateUser(rows[0]);
+      if (!hydrated) return null;
+      if (!includePassword) hydrated.password = undefined;
+      return hydrated;
+    }
+
+    if (criteria.passwordResetToken) {
+      const [rows] = await this.pool.query(
+        `SELECT ${USER_COLUMNS.join(', ')}
+         FROM users
+         WHERE passwordResetToken = ?
+           AND passwordResetExpires IS NOT NULL
+           AND passwordResetExpires > NOW()
+         LIMIT 1`,
+        [criteria.passwordResetToken]
+      );
+      const hydrated = hydrateUser(rows[0]);
+      if (!hydrated) return null;
+      if (!includePassword) hydrated.password = undefined;
+      return hydrated;
+    }
+
+    if (criteria.email && criteria.passwordResetOtp) {
+      const [rows] = await this.pool.query(
+        `SELECT ${USER_COLUMNS.join(', ')}
+         FROM users
+         WHERE email = ?
+           AND passwordResetOtp = ?
+           AND passwordResetOtpExpires IS NOT NULL
+           AND passwordResetOtpExpires > NOW()
+         LIMIT 1`,
+        [criteria.email, criteria.passwordResetOtp]
+      );
+      const hydrated = hydrateUser(rows[0]);
+      if (!hydrated) return null;
+      if (!includePassword) hydrated.password = undefined;
+      return hydrated;
+    }
+
+    if (Array.isArray(criteria.$or) && criteria.$or.length > 0) {
+      const identifier = criteria.$or[0].email || criteria.$or[1]?.username || criteria.$or[2]?.phoneNumber;
+      if (!identifier) return null;
+
+      const columns = includePassword
+        ? USER_COLUMNS.join(', ')
+        : USER_COLUMNS.filter((column) => column !== 'password').join(', ');
+
+      const [rows] = await this.pool.query(
+        `SELECT ${columns}
+         FROM users
+         WHERE email = ? OR username = ? OR phoneNumber = ?
+         LIMIT 1`,
+        [identifier, identifier, identifier]
+      );
+
+      const hydrated = hydrateUser(rows[0]);
+      if (!hydrated) return null;
+      if (!includePassword) hydrated.password = undefined;
+      return hydrated;
+    }
+
+    return null;
+  }
+
+  static async findById(id, options = {}) {
+    const includePassword = Boolean(options.includePassword);
+    const columns = includePassword
+      ? USER_COLUMNS.join(', ')
+      : USER_COLUMNS.filter((column) => column !== 'password').join(', ');
+
+    const [rows] = await this.pool.query(
+      `SELECT ${columns} FROM users WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
+    const hydrated = hydrateUser(rows[0]);
+    if (!hydrated) return null;
+    if (!includePassword) hydrated.password = undefined;
+    return hydrated;
+  }
+
+  static find(criteria = {}) {
+    const query = {
+      async exec() {
+        const [rows] = await User.pool.query(
+          `SELECT ${USER_COLUMNS.filter((column) => column !== 'password').join(', ')} FROM users`
+        );
+
+        const filtered = rows.filter((row) => {
+          if (criteria.role && criteria.role.$in) {
+            return criteria.role.$in.includes(row.role);
+          }
+          return true;
+        });
+
+        return filtered.map((row) => {
+          const user = hydrateUser(row);
+          user.password = undefined;
+          return user;
+        });
       },
-      default: 'Tenant',
-    },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
-    verificationStatus: {
-      type: String,
-      enum: ['Pending', 'Verified', 'Rejected'],
-      default: 'Pending',
-    },
-    verificationType: {
-      type: String,
-      enum: ['Student ID', 'NID', 'Passport', 'Other'],
-      default: 'Student ID',
-    },
-    verificationDocumentUrl: {
-      type: String,
-      trim: true,
-    },
-    verificationToken: {
-      type: String,
-      select: false,
-    },
-    verificationTokenExpires: {
-      type: Date,
-      select: false,
-    },
-    passwordResetToken: {
-      type: String,
-      select: false,
-    },
-    passwordResetExpires: {
-      type: Date,
-      select: false,
-    },
-    passwordResetOtp: {
-      type: String,
-      select: false,
-    },
-    passwordResetOtpExpires: {
-      type: Date,
-      select: false,
-    },
-    passwordResetOtpRequestedAt: {
-      type: Date,
-      select: false,
-    },
-    passwordResetOtpRequestCount: {
-      type: Number,
-      default: 0,
-      select: false,
-    },
-    passwordResetOtpWindowStartedAt: {
-      type: Date,
-      select: false,
-    },
-    profileSummary: {
-      type: String,
-      trim: true,
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
+      select() {
+        return this;
+      },
+      then(resolve, reject) {
+        return this.exec().then(resolve, reject);
+      },
+    };
 
-// --- Mongoose Middleware (Hooks) ---
-
-// 1. Pre-save hook to hash password before saving a NEW user
-//    or when the password field is modified.
-userSchema.pre('save', async function (next) {
-  // `this` refers to the current user document being saved
-  if (!this.isModified('password')) {
-    // If password hasn't been changed, move to the next middleware
-    return next();
+    return query;
   }
 
-  // Hash the password
-  try {
-    const salt = await bcrypt.genSalt(10); // Generate a salt (10 rounds is common)
-    this.password = await bcrypt.hash(this.password, salt); // Hash password with salt
-    next();
-  } catch (error) {
-    next(error); // Pass error to the next middleware/error handler
+  static async findByIdAndUpdate(id, update = {}) {
+    const user = await User.findById(id, { includePassword: true });
+    if (!user) return null;
+    Object.assign(user, update);
+    await user.save();
+    return user;
   }
-});
 
-// --- Mongoose Instance Methods ---
+  static async findPendingVerificationUsers() {
+    const [rows] = await this.pool.query(
+      `SELECT id, username, fullName, email, phoneNumber, role, verificationType,
+              verificationDocumentUrl, verificationStatus, profilePictureUrl,
+              instituteType, instituteName, hometown, createdAt
+       FROM users
+       WHERE verificationStatus = 'Pending'
+         AND role IN ('Tenant', 'Landlord')
+       ORDER BY createdAt DESC`
+    );
 
-// 2. Method to compare entered password with hashed password in DB
-userSchema.methods.comparePassword = async function (enteredPassword) {
-  // `this.password` is the hashed password from the DB (needs to be selected if `select: false`)
-  // Since `password` field has `select: false`, we need to ensure it's available
-  // when calling this method. Or, re-fetch the user with the password field.
-  // For now, assume the user object calling this method has the password.
-  return await bcrypt.compare(enteredPassword, this.password);
-};
+    return rows.map((row) => ({
+      ...row,
+      _id: String(row.id),
+      id: row.id,
+    }));
+  }
 
-// 3. Method to generate and set the email verification token
-userSchema.methods.getVerificationToken = function() {
-    // Generate a random 20-byte token (40 hex characters)
+  static async create(data) {
+    if (Array.isArray(data)) {
+      const created = [];
+      for (const item of data) {
+        const user = new User(item);
+        await user.save();
+        created.push(user);
+      }
+      return created;
+    }
+
+    const user = new User(data);
+    await user.save();
+    return user;
+  }
+
+  async comparePassword(enteredPassword) {
+    if (!this.password) return false;
+    return bcrypt.compare(enteredPassword, this.password);
+  }
+
+  getVerificationToken() {
     const verificationToken = crypto.randomBytes(20).toString('hex');
-
-    // Hash the token and set it to the schema field
-    // Store only the hashed token in the database for security
     this.verificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
-
-    // Set expiry for the token (e.g., 10 minutes from now)
-    // The expiry time will be in milliseconds
-    this.verificationTokenExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-    // Return the raw, unhashed token to be sent in the email
-    // This is the token the user will receive in the URL
+    this.verificationTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
     return verificationToken;
-};
+  }
 
-// 4. Method to generate and set the password reset token
-userSchema.methods.getResetPasswordToken = function() {
-    // Generate a random 20-byte token (40 hex characters)
-    const resetToken = crypto.randomBytes(20).toString('hex');
+  async save() {
+    const pool = getPool();
 
-    // Hash the token and set it to the schema field
-    // Store only the hashed token in the database for security
-    this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    if (!this.password && this.__isNew) {
+      throw new Error('Password is required');
+    }
 
-    // Set expiry for the token (e.g., 10 minutes from now)
-    this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    let passwordToPersist = this.password;
+    if (!this.__isNew && !passwordToPersist) {
+      passwordToPersist = this.__loadedPasswordHash;
+    }
 
-    // Return the raw, unhashed token to be sent in the email
-    // This is the token the user will receive in the URL
-    return resetToken;
-};
+    if (!this.__isNew && !passwordToPersist && this.id) {
+      const [rows] = await pool.query('SELECT password FROM users WHERE id = ? LIMIT 1', [this.id]);
+      passwordToPersist = rows[0]?.password;
+    }
 
-// Create and export the User model
-// Mongoose will create a collection named 'users' (pluralized, lowercase)
-const User = mongoose.model('User', userSchema);
+    const passwordLooksHashed = typeof passwordToPersist === 'string' && /^\$2[aby]\$\d{2}\$/.test(passwordToPersist);
+    if (passwordToPersist && (!passwordLooksHashed || this.__isNew || passwordToPersist !== this.__loadedPasswordHash)) {
+      const salt = await bcrypt.genSalt(10);
+      passwordToPersist = await bcrypt.hash(passwordToPersist, salt);
+    }
+
+    const payload = {
+      username: this.username || null,
+      fullName: this.fullName || null,
+      email: this.email || null,
+      phoneNumber: this.phoneNumber || null,
+      password: passwordToPersist || null,
+      role: this.role || 'Tenant',
+      isVerified: this.isVerified ? 1 : 0,
+      verificationStatus: this.verificationStatus || 'Pending',
+      verificationType: this.verificationType || 'Student ID',
+      verificationDocumentUrl: this.verificationDocumentUrl || null,
+      verificationToken: this.verificationToken || null,
+      verificationTokenExpires: this.verificationTokenExpires || null,
+      passwordResetToken: this.passwordResetToken || null,
+      passwordResetExpires: this.passwordResetExpires || null,
+      passwordResetOtp: this.passwordResetOtp || null,
+      passwordResetOtpExpires: this.passwordResetOtpExpires || null,
+      passwordResetOtpRequestedAt: this.passwordResetOtpRequestedAt || null,
+      passwordResetOtpRequestCount: Number(this.passwordResetOtpRequestCount || 0),
+      passwordResetOtpWindowStartedAt: this.passwordResetOtpWindowStartedAt || null,
+      profileSummary: this.profileSummary || null,
+      instituteType: this.instituteType || null,
+      instituteName: this.instituteName || null,
+      hometown: this.hometown || null,
+      profilePictureUrl: this.profilePictureUrl || null,
+      verificationFeedback: this.verificationFeedback || null,
+      verificationReviewedAt: this.verificationReviewedAt || null,
+    };
+
+    try {
+      if (this.__isNew) {
+        const [result] = await pool.query(
+          `INSERT INTO users (
+            username, fullName, email, phoneNumber, password, role,
+            isVerified, verificationStatus, verificationType, verificationDocumentUrl,
+            verificationToken, verificationTokenExpires,
+            passwordResetToken, passwordResetExpires,
+            passwordResetOtp, passwordResetOtpExpires,
+            passwordResetOtpRequestedAt, passwordResetOtpRequestCount, passwordResetOtpWindowStartedAt,
+            profileSummary, instituteType, instituteName, hometown,
+            profilePictureUrl, verificationFeedback, verificationReviewedAt
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?,
+            ?, ?,
+            ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?
+          )`,
+          [
+            payload.username,
+            payload.fullName,
+            payload.email,
+            payload.phoneNumber,
+            payload.password,
+            payload.role,
+            payload.isVerified,
+            payload.verificationStatus,
+            payload.verificationType,
+            payload.verificationDocumentUrl,
+            payload.verificationToken,
+            payload.verificationTokenExpires,
+            payload.passwordResetToken,
+            payload.passwordResetExpires,
+            payload.passwordResetOtp,
+            payload.passwordResetOtpExpires,
+            payload.passwordResetOtpRequestedAt,
+            payload.passwordResetOtpRequestCount,
+            payload.passwordResetOtpWindowStartedAt,
+            payload.profileSummary,
+            payload.instituteType,
+            payload.instituteName,
+            payload.hometown,
+            payload.profilePictureUrl,
+            payload.verificationFeedback,
+            payload.verificationReviewedAt,
+          ]
+        );
+        this.id = result.insertId;
+        this._id = String(result.insertId);
+        this.__isNew = false;
+      } else {
+        await pool.query(
+          `UPDATE users SET
+            username = ?,
+            fullName = ?,
+            email = ?,
+            phoneNumber = ?,
+            password = ?,
+            role = ?,
+            isVerified = ?,
+            verificationStatus = ?,
+            verificationType = ?,
+            verificationDocumentUrl = ?,
+            verificationToken = ?,
+            verificationTokenExpires = ?,
+            passwordResetToken = ?,
+            passwordResetExpires = ?,
+            passwordResetOtp = ?,
+            passwordResetOtpExpires = ?,
+            passwordResetOtpRequestedAt = ?,
+            passwordResetOtpRequestCount = ?,
+            passwordResetOtpWindowStartedAt = ?,
+            profileSummary = ?,
+            instituteType = ?,
+            instituteName = ?,
+            hometown = ?,
+            profilePictureUrl = ?,
+            verificationFeedback = ?,
+            verificationReviewedAt = ?
+           WHERE id = ?`,
+          [
+            payload.username,
+            payload.fullName,
+            payload.email,
+            payload.phoneNumber,
+            payload.password,
+            payload.role,
+            payload.isVerified,
+            payload.verificationStatus,
+            payload.verificationType,
+            payload.verificationDocumentUrl,
+            payload.verificationToken,
+            payload.verificationTokenExpires,
+            payload.passwordResetToken,
+            payload.passwordResetExpires,
+            payload.passwordResetOtp,
+            payload.passwordResetOtpExpires,
+            payload.passwordResetOtpRequestedAt,
+            payload.passwordResetOtpRequestCount,
+            payload.passwordResetOtpWindowStartedAt,
+            payload.profileSummary,
+            payload.instituteType,
+            payload.instituteName,
+            payload.hometown,
+            payload.profilePictureUrl,
+            payload.verificationFeedback,
+            payload.verificationReviewedAt,
+            this.id,
+          ]
+        );
+      }
+    } catch (error) {
+      if (error && error.code === 'ER_DUP_ENTRY') {
+        const normalized = new Error('Duplicate value violates a unique constraint.');
+        normalized.code = error.code;
+        throw normalized;
+      }
+      throw error;
+    }
+
+    this.password = payload.password;
+    this.__loadedPasswordHash = payload.password;
+    return this;
+  }
+}
 
 module.exports = User;

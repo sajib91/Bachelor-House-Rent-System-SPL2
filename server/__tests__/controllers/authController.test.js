@@ -1,7 +1,6 @@
 // backend/__tests__/controllers/authController.test.js
 const request = require('supertest');
 const express = require('express');
-const mongoose = require('mongoose');
 const User = require('../../models/User'); // Adjust path as necessary
 const authRoutes = require('../../routes/authRoutes'); // Your router
 const { errorHandler } = require('../../middleware/errorMiddleware');
@@ -23,6 +22,10 @@ describe('Auth Controller - Registration', () => {
     email: 'test@example.com',
     password: 'Password123!',
     role: 'Tenant',
+    instituteType: 'University',
+    instituteName: 'Dhaka University',
+    hometown: 'Dhaka',
+    profilePictureUrl: 'https://example.com/profile.jpg',
     verificationType: 'Student ID',
     verificationDocumentUrl: 'https://example.com/student-id.jpg',
   };
@@ -86,19 +89,25 @@ describe('Auth Controller - Registration', () => {
 
 // You would add more describe blocks for login, forgotPassword, etc.
 describe('Auth Controller - Login', () => {
-    const loginCredentials = {
-        email: 'logintest@example.com',
-        password: 'Password123!'
-    };
+  let loginCredentials;
 
     beforeEach(async () => {
+    loginCredentials = {
+      email: `logintest_${Date.now()}@example.com`,
+      password: 'Password123!'
+    };
+
         // Create a user to log in with
         const user = new User({
-            username: 'logintestuser',
+          username: `logintestuser_${Date.now()}`,
           fullName: 'Login Test Tenant',
             email: loginCredentials.email,
             password: loginCredentials.password, // Will be hashed by pre-save
           role: 'Tenant',
+          instituteType: 'University',
+          instituteName: 'Dhaka University',
+          hometown: 'Dhaka',
+          profilePictureUrl: 'https://example.com/profile.jpg',
           verificationType: 'Student ID',
           verificationDocumentUrl: 'https://example.com/student-id.jpg',
           isVerified: true,
