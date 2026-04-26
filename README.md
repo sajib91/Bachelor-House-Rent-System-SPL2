@@ -2,10 +2,6 @@
 
 Monorepo for a Dhaka-focused rental marketplace with a Node.js/Express backend (MySQL) and a React/Vite frontend.
 
-## Live Demo
-
-- Frontend: https://client-three-tau-77.vercel.app
-- Backend: deploy the `server` service on Render using [render.yaml](render.yaml)
 
 ## Project Structure
 
