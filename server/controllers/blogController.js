@@ -1,4 +1,4 @@
-// backend/controllers/blogController.js
+
 const Blog = require('../models/Blog');
 const { validationResult } = require('express-validator'); // For input validation
 
