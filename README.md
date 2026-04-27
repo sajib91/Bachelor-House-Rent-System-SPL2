@@ -227,7 +227,7 @@ Local URLs:
 - `GET /api/auth/verify-email/:token`
 - `POST /api/auth/resend-verification-email`
 
-### Admin Auth and Moderation
+### Admin Auth and Moderation (Admin userID: "admin" ; pass: "admin@123"
 
 - `GET /api/auth/admin-summary`
 - `GET /api/auth/admin/pending-verifications`
@@ -249,6 +249,12 @@ Local URLs:
 - frontend production build passes
 - runtime dependency issue in backend startup fixed by nodemailer version correction
 
-## Maintainer
+## developer
 
-Md. Khayrul Islam Sajib
+1. **Md. Khayrul Islam Sajib**
+   email : bsse1552@iit.du.ac.bd
+
+2. **Md. Atiqur Rahman**
+   email: bsse1417@iit.du.ac.bd
+
+
