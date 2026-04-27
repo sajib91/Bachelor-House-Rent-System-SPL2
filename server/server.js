@@ -110,7 +110,7 @@ const io = new Server(server, {
   },
 });
 
-const SOCKET_JWT_SECRET = process.env.JWT_SECRET || 'bachelor-house-rent-system-dev-secret';
+const SOCKET_JWT_SECRET = process.env.JWT_SECRET || 'bhrs-spl-2-dev-secret';
 
 const canJoinPropertyRoom = (property, user) => {
   if (!property || !user) return false;
@@ -229,7 +229,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/', (req, res) => {
   // req: request object (contains info about the incoming request)
   // res: response object (used to send a response back to the client)
-  res.status(200).json({ message: 'Welcome to the Bachelor House Rent System API!' });
+  res.status(200).json({ message: 'Welcome to the BHRS-SPL-2 API!' });
 });
 
 // Apply rate limiting to API routes to prevent abuse.

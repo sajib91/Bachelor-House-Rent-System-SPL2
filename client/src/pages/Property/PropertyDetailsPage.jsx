@@ -120,7 +120,7 @@ const PropertyDetailsPage = () => {
   }, [chatInputFocused]);
 
   useEffect(() => {
-    const baseTitle = defaultTitleRef.current || 'Bachelor House Rent System';
+    const baseTitle = defaultTitleRef.current || 'BHRS-SPL-2';
     document.title = unreadCount > 0 ? `(${unreadCount}) ${baseTitle}` : baseTitle;
 
     return () => {

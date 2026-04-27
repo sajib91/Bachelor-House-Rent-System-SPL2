@@ -143,7 +143,7 @@ const buildConfig = () => ({
   port: getNumericEnv('DB_PORT', 3306),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'to_let_globe',
+  database: process.env.DB_NAME || 'bhrs_spl_2',
   waitForConnections: true,
   connectionLimit: getNumericEnv('DB_CONNECTION_LIMIT', 10),
   queueLimit: 0,
@@ -155,7 +155,7 @@ const ensureDatabaseAndUsersTable = async () => {
   const port = getNumericEnv('DB_PORT', 3306);
   const user = process.env.DB_USER || 'root';
   const password = process.env.DB_PASSWORD || '';
-  const database = process.env.DB_NAME || 'to_let_globe';
+  const database = process.env.DB_NAME || 'bhrs_spl_2';
 
   const adminConnection = await mysql.createConnection({
     host,

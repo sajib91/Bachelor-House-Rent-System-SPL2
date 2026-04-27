@@ -17,7 +17,7 @@ const HomePage = () => {
           <div style={badgeStyle}>Verified seat marketplace for Dhaka bachelors</div>
           <h1 style={heroTitleStyle}>Find a safe seat, not a headache.</h1>
           <p style={leadStyle}>
-            Bachelor House Rent System connects verified tenants and credible landlords with seat-based listings,
+            BHRS-SPL-2 connects verified tenants and credible landlords with seat-based listings,
             digital approvals, map precision, and monthly rent handling built for Dhaka.
           </p>
           <div style={ctaRowStyle}>

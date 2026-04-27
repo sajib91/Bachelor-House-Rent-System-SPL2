@@ -35,7 +35,7 @@ services:
       - key: ETHEREAL_PASS
         sync: false
       - key: EMAIL_FROM_NAME
-        value: Bachelor House Rent System
+        value: BHRS-SPL-2
       - key: EMAIL_FROM_ADDRESS
         sync: false
       - key: RATE_LIMIT_WINDOW_MS

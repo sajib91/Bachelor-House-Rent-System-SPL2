@@ -8,7 +8,7 @@ const connectDB = async () => {
     await ensureDatabaseAndUsersTable();
     const pool = initPool();
     await pool.query('SELECT 1');
-    const dbName = process.env.DB_NAME || 'to_let_globe';
+    const dbName = process.env.DB_NAME || 'bhrs_spl_2';
     const host = process.env.DB_HOST || '127.0.0.1';
     console.log(`MySQL Connected: ${host}/${dbName}`);
   } catch (error) {

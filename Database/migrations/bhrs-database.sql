@@ -1,8 +1,8 @@
 -- Safe migration script for existing MySQL databases.
 -- Purpose: align legacy schemas to the current SQL-backed backend models.
 
-CREATE DATABASE IF NOT EXISTS to_let_globe;
-USE to_let_globe;
+CREATE DATABASE IF NOT EXISTS bhrs_spl_2;
+USE bhrs_spl_2;
 
 DELIMITER $$
 

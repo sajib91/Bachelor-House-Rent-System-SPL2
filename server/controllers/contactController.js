@@ -23,7 +23,7 @@ exports.submitContactForm = async (req, res, next) => {
 
         // Send confirmation email to the user
         const userEmailContent = `
-            <h1>Thank you for contacting To-Let Globe!</h1>
+            <h1>Thank you for contacting BHRS-SPL-2!</h1>
             <p>We have received your message and will get back to you shortly.</p>
             <br>
             <h3>Your Details:</h3>
@@ -39,7 +39,7 @@ exports.submitContactForm = async (req, res, next) => {
         try {
             await sendEmail({
                 email: email,
-                subject: 'To-Let Globe: Your Contact Form Submission',
+                subject: 'BHRS-SPL-2: Your Contact Form Submission',
                 html: userEmailContent
             });
             console.log('User confirmation email sent successfully.');
@@ -52,7 +52,7 @@ exports.submitContactForm = async (req, res, next) => {
         // Send notification email to the admin
         if (process.env.ADMIN_EMAIL) {
             const adminEmailContent = `
-                <p>A new contact form submission has been received on To-Let Globe:</p>
+                <p>A new contact form submission has been received on BHRS-SPL-2:</p>
                 <ul>
                     <li><strong>Name:</strong> ${name}</li>
                     <li><strong>Email:</strong> ${email}</li>
@@ -67,7 +67,7 @@ exports.submitContactForm = async (req, res, next) => {
             try {
                 await sendEmail({
                     email: process.env.ADMIN_EMAIL,
-                    subject: `New To-Let Globe Contact: ${topic} from ${name}`,
+                    subject: `New BHRS-SPL-2 Contact: ${topic} from ${name}`,
                     html: adminEmailContent
                 });
                 console.log('Admin notification email sent successfully.');

@@ -34,7 +34,7 @@ const buildUsername = (fullName, email) => {
 const generateToken = (userId, userRole) => {
   return jwt.sign(
     { id: userId, role: userRole }, // Payload: data to store in the token
-    process.env.JWT_SECRET || 'bachelor-house-rent-system-dev-secret',
+    process.env.JWT_SECRET || 'bhrs-spl-2-dev-secret',
     { expiresIn: process.env.JWT_EXPIRES_IN || '1h' } // Token expiration time
   );
 };
@@ -68,7 +68,7 @@ const generatePasswordResetOtp = () => crypto.randomInt(100000, 999999).toString
 const sendPasswordResetOtpEmail = async (email, otp) => {
   const emailMessage = `
       <h2>Password Reset Request</h2>
-      <p>You (or someone else) requested a password reset for your To-Let Globe account.</p>
+      <p>You (or someone else) requested a password reset for your BHRS-SPL-2 account.</p>
       <p>Use this one-time code to reset your password:</p>
       <p style="font-size: 24px; font-weight: 700; letter-spacing: 0.2em;">${otp}</p>
       <p>This code is valid for ${Math.max(1, Math.floor(OTP_EXPIRES_MS / 60000))} minutes.</p>
@@ -77,7 +77,7 @@ const sendPasswordResetOtpEmail = async (email, otp) => {
 
   await sendEmail({
     email,
-    subject: 'Password Reset Request - To-Let Globe',
+    subject: 'Password Reset Request - BHRS-SPL-2',
     html: emailMessage,
     text: `Use this password reset code: ${otp}`,
   });
@@ -514,7 +514,7 @@ exports.resendVerificationEmail = async (req, res, next) => {
 
         const resendEmailMessage = `
             <h2>New Email Verification Link for Your Account</h2>
-            <p>You requested a new email verification link for your To-Let Globe account.</p>
+            <p>You requested a new email verification link for your BHRS-SPL-2 account.</p>
             <p>Please click the link below to verify your email address:</p>
             <p><a href="${verificationUrl}" target="_blank">Verify My Email Address</a></p>
             <p>This link is valid for 10 minutes.</p>
@@ -677,7 +677,7 @@ exports.reviewUserVerification = async (req, res, next) => {
       try {
         await sendEmail({
           email: user.email,
-          subject: `To-Let Globe verification ${status.toLowerCase()}`,
+          subject: `BHRS-SPL-2 verification ${status.toLowerCase()}`,
           html: emailMessage,
           text: status === 'Rejected' && trimmedFeedback
             ? `Your verification was rejected. Admin feedback: ${trimmedFeedback}`

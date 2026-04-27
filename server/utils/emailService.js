@@ -46,7 +46,7 @@ const sendEmail = async (options) => {
   // Define email options
   const mailOptions = {
     // Use environment variables for the 'from' address
-    from: `"${process.env.EMAIL_FROM_NAME || 'To-Let Globe'}" <${process.env.EMAIL_FROM_ADDRESS || 'noreply@sandboxa76c076d96ef4ffb96c0afbcbbc1886a.mailgun.org'}>`, // Explicit Ethereal sender
+    from: `"${process.env.EMAIL_FROM_NAME || 'BHRS-SPL-2'}" <${process.env.EMAIL_FROM_ADDRESS || 'noreply@sandboxa76c076d96ef4ffb96c0afbcbbc1886a.mailgun.org'}>`, // Explicit Ethereal sender
     to: options.email,       // Recipient's email address
     subject: options.subject,  // Subject line
     text: options.text,        // Plain text body (optional)

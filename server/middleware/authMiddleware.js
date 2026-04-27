@@ -16,7 +16,7 @@ exports.protect = async (req, res, next) => {
       token = req.headers.authorization.split(' ')[1]; // "Bearer <token>" -> "<token>"
 
       // Verify the token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'bachelor-house-rent-system-dev-secret');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'bhrs-spl-2-dev-secret');
 
       if (decoded.id === 'system-admin' && decoded.role === 'Admin') {
         req.user = {
