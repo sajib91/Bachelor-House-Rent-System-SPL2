@@ -1,4 +1,4 @@
-// backend/__tests__/controllers/authController.test.js
+
 const request = require('supertest');
 const express = require('express');
 const User = require('../../models/User'); // Adjust path as necessary

@@ -1,52 +1,36 @@
-# BHRS-SPL-2
+# Bachelor House Rent System
 
-BHRS-SPL-2 (Bachelor House Rent System) is a full-stack seat-rental platform focused on bachelor housing workflows in Dhaka.
+Monorepo for a Dhaka-focused rental marketplace with a Node.js/Express backend (MySQL) and a React/Vite frontend.
 
-It is a monorepo with:
+## Live Demo
 
-- a React + Vite client application
-- a Node.js + Express API server
-- a MySQL data layer (auto-bootstrap tables on server startup)
+- Frontend: https://client-three-tau-77.vercel.app
+- Backend: deploy the `server` service on Render using [render.yaml](render.yaml)
 
-## Core Highlights
+## Project Structure
 
-- Role-based access: Tenant, Landlord, Admin
-- Tenant and landlord verification workflow with admin approval/rejection
-- Listing publication moderation by admin
-- Verified-tenant-only seat application flow
-- Landlord seat request review (approve/reject)
-- Secure rent payment submission (provider, mobile account, OTP, PIN)
-- In-app messaging and typing indicators via Socket.IO
-- Blog and contact modules
-- Admin intelligence/insight and moderation tooling
+- `server/` - Express API, MySQL-backed models, auth, moderation, and intelligence endpoints
+- `client/` - React/Vite web app with listing, dashboard, blog, and admin pages
 
-## Repository Layout
+## Key Features
 
-```text
-.
-├── client/                # React + Vite frontend
-├── server/                # Express API + business logic
-├── Database/              # SQL migration assets
-├── render.yaml            # Render deployment blueprint
-└── README.md
-```
+- Role-based platform: Tenant, Landlord, Admin
+- Landlord-only listing publication with admin approval workflow
+- Admin moderation with mandatory feedback when removing listings
+- Landlord ownership enforcement for listing update/delete
+- Tenant seat application workflow with landlord approval/rejection
+- Secure tenant payment flow:
+	- method selection
+	- mobile account number
+	- OTP step
+	- PIN step
+	- payment slip upload
+	- backend-generated QR authentication code
+- Landlord dashboard notifications for pending seat applications
 
-## Technology Stack
+## Local Setup
 
-- Frontend: React 18, Vite 6, React Router, React Hook Form, Axios, Socket.IO client
-- Backend: Express 5, JWT auth, Socket.IO, Express Validator, Multer, Cloudinary, Nodemailer
-- Database: MySQL (via mysql2/promise)
-- Testing: Jest + Supertest
-
-## Prerequisites
-
-- Node.js 18+ (recommended)
-- npm 9+
-- MySQL 8+
-
-## Local Development
-
-### 1) Clone
+Clone the repo:
 
 ```bash
 git clone https://github.com/sajib91/Bachelor-House-Rent-System-SPL2.git
