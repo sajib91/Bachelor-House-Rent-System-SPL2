@@ -46,7 +46,7 @@ router.post('/', upload.array('photos', 10), asyncHandler(async (req, res) => { 
         const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
 
         const result = await cloudinary.uploader.upload(dataUri, {
-          folder: 'to-let-globe-properties',
+          folder: 'bhrs-spl-2-properties',
           resource_type: 'image',
         });
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import apiClient from '../../services/apiService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,9 +17,6 @@ const PropertyDetailsPage = () => {
   const [studentIdType, setStudentIdType] = useState('Student ID');
   const [seatsRequested, setSeatsRequested] = useState(1);
   const [message, setMessage] = useState('');
-  const [transactionId, setTransactionId] = useState('');
-  const [paymentProvider, setPaymentProvider] = useState('bKash');
-  const [paymentMonth, setPaymentMonth] = useState(new Date().toISOString().slice(0, 7));
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
@@ -131,19 +128,14 @@ const PropertyDetailsPage = () => {
     };
   }, [unreadCount]);
 
-  useEffect(() => {
-    if (property?.rentalMonth) {
-      setPaymentMonth(property.rentalMonth);
-    }
-  }, [property?.rentalMonth]);
-
   const isLandlordOwner = useMemo(() => String(property?.landlord?._id || property?.landlord) === String(user?.id), [property, user?.id]);
   const isTenant = user?.role === 'Tenant';
+  const isVerifiedTenant = isTenant && (user?.verificationStatus === 'Verified' || user?.isVerified === true);
   const tenantApplication = useMemo(() => (
     (property?.seatApplications || []).find((application) => String(application.tenant?._id || application.tenant) === String(user?.id)) || null
   ), [property?.seatApplications, user?.id]);
   const canReviewApplications = isAuthenticated && (isLandlordOwner || user?.role === 'Admin');
-  const canApplyForSeat = isAuthenticated && isTenant && !isLandlordOwner && Number(property?.availableSeats || 0) > 0;
+  const canApplyForSeat = isAuthenticated && isVerifiedTenant && !isLandlordOwner && Number(property?.availableSeats || 0) > 0;
   const canPayRent = isAuthenticated && isTenant && tenantApplication?.status === 'Approved';
   const canChat = isAuthenticated && (isLandlordOwner || isTenant);
   const canReviewProperty = isAuthenticated && isTenant && Boolean(tenantApplication);
@@ -170,6 +162,13 @@ const PropertyDetailsPage = () => {
       if (queryMatch?.[1]) {
         return `https://www.google.com/maps?q=${decodeURIComponent(queryMatch[1])}&output=embed`;
       }
+
+      const placeMatch = mapLocationLink.match(/\/place\/([^/?]+)/i);
+      if (placeMatch?.[1]) {
+        return `https://www.google.com/maps?q=${decodeURIComponent(placeMatch[1].replace(/\+/g, ' '))}&output=embed`;
+      }
+
+      return `https://www.google.com/maps?q=${encodeURIComponent(mapLocationLink)}&output=embed`;
     }
 
     const searchParts = [mapLocationLabel, property?.address, property?.area].filter(Boolean).join(', ');
@@ -193,21 +192,6 @@ const PropertyDetailsPage = () => {
       setProperty(refreshed.data);
     } catch (applyError) {
       toast.error(applyError.response?.data?.message || 'Unable to submit seat request.');
-    }
-  };
-
-  const submitPayment = async () => {
-    try {
-      const response = await apiClient.post(`/properties/${id}/payments`, {
-        month: paymentMonth,
-        provider: paymentProvider,
-        transactionId,
-        amount: property?.monthlyRentPerSeat,
-      });
-      toast.success(response.data.message || 'Rent payment submitted.');
-      setTransactionId('');
-    } catch (paymentError) {
-      toast.error(paymentError.response?.data?.message || 'Unable to submit payment.');
     }
   };
 
@@ -381,22 +365,10 @@ const PropertyDetailsPage = () => {
         </article>
 
         <aside style={sideStackStyle}>
-          {(isLandlordOwner || user?.role === 'Admin') && (
-            <article style={panelStyle}>
-              <h2 style={panelTitleStyle}>AI listing report</h2>
-              <p style={bodyTextStyle}>Open the dedicated quality and dynamic pricing report for this listing.</p>
-              <div style={chipRowStyle}>
-                <span style={chipStyle}>Quality {property.listingQuality?.score ?? 0}%</span>
-                <span style={chipStyle}>Commute {property.commuteScore?.score ?? 50}%</span>
-              </div>
-              <Link to={`/properties/${property._id}/intelligence-report`} style={reportLinkStyle}>Open full report</Link>
-            </article>
-          )}
-
           {isTenant ? (
           <article style={panelStyle}>
             <h2 style={panelTitleStyle}>Apply for seat</h2>
-            <p style={bodyTextStyle}>Send a seat request or ask for a roommate match. Only tenants can apply.</p>
+            <p style={bodyTextStyle}>Send a seat request or ask for a roommate match. Only verified registered tenant accounts can apply.</p>
             <label style={fieldStyle}>
               <span>Identity type</span>
               <select value={studentIdType} onChange={(event) => setStudentIdType(event.target.value)} style={inputStyle}>
@@ -423,37 +395,25 @@ const PropertyDetailsPage = () => {
             </button>
             {isLandlordOwner && <p style={helperTextStyle}>You cannot apply to your own listing.</p>}
             {!isAuthenticated && <p style={helperTextStyle}>Login as a tenant to submit a request.</p>}
+            {isAuthenticated && isTenant && !isVerifiedTenant && <p style={helperTextStyle}>Only verified registered tenant accounts can apply for seats.</p>}
             {(property.availableSeats || 0) <= 0 && <p style={helperTextStyle}>Fully booked. New requests are closed.</p>}
           </article>
           ) : (
             <article style={panelStyle}>
               <h2 style={panelTitleStyle}>Apply for seat</h2>
-              <p style={bodyTextStyle}>Only tenant accounts can apply for seats on this system.</p>
+              <p style={bodyTextStyle}>Only verified registered tenant accounts can apply for seats on this system.</p>
             </article>
           )}
 
           <article style={panelStyle}>
             <h2 style={panelTitleStyle}>Monthly rent</h2>
-            {isTenant ? null : <p style={bodyTextStyle}>Only tenants with an approved seat can submit rent payments.</p>}
-            <label style={fieldStyle}>
-              <span>Month</span>
-              <input type="month" value={paymentMonth} onChange={(event) => setPaymentMonth(event.target.value)} style={inputStyle} />
-            </label>
-            <label style={fieldStyle}>
-              <span>Provider</span>
-              <select value={paymentProvider} onChange={(event) => setPaymentProvider(event.target.value)} style={inputStyle}>
-                <option value="bKash">bKash</option>
-                <option value="Nagad">Nagad</option>
-                <option value="Rocket">Rocket</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label style={fieldStyle}>
-              <span>Transaction ID</span>
-              <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} style={inputStyle} placeholder="Txn ID" />
-            </label>
-            <button type="button" onClick={submitPayment} disabled={!canPayRent} style={secondaryButtonStyle}>
-              {canPayRent ? 'Submit payment' : 'Payment unavailable'}
+            {isTenant ? (
+              <p style={bodyTextStyle}>Secure payment uses mobile number, OTP, and PIN verification. Complete payment from your dashboard to get a monthly PDF receipt.</p>
+            ) : (
+              <p style={bodyTextStyle}>Only approved tenants can complete secure monthly rent payments from their dashboards.</p>
+            )}
+            <button type="button" onClick={() => navigate('/dashboard')} disabled={!canPayRent && isTenant} style={secondaryButtonStyle}>
+              {isTenant ? (canPayRent ? 'Open secure payment flow' : 'Payment unavailable') : 'Open dashboard'}
             </button>
             {isTenant && tenantApplication?.status !== 'Approved' && (
               <p style={helperTextStyle}>Payment opens after your seat request is approved.</p>
@@ -603,7 +563,6 @@ const actionRowStyle = { display: 'flex', gap: '10px', flexWrap: 'wrap' };
 const approveButtonStyle = { border: '0', padding: '10px 14px', borderRadius: '999px', background: 'rgba(56,161,105,0.2)', color: '#8ff0b4', fontWeight: 700 };
 const rejectButtonStyle = { border: '0', padding: '10px 14px', borderRadius: '999px', background: 'rgba(229,62,62,0.2)', color: '#ff9b9b', fontWeight: 700 };
 const contactLinkStyle = { display: 'inline-flex', alignItems: 'center', padding: '8px 12px', borderRadius: '999px', border: '1px solid rgba(255,255,255,0.15)', color: '#ffd166', textDecoration: 'none', fontWeight: 700 };
-const reportLinkStyle = { display: 'inline-flex', marginTop: '12px', padding: '10px 14px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', color: '#09111b', textDecoration: 'none', fontWeight: 800 };
 const footerRowStyle = { marginTop: '18px', display: 'flex', justifyContent: 'start' };
 const backButtonStyle = { border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', color: '#f6f1e8', borderRadius: '999px', padding: '10px 14px', fontWeight: 700 };
 const stateStyle = { minHeight: '50vh', display: 'grid', placeItems: 'center', color: '#fff7e6' };

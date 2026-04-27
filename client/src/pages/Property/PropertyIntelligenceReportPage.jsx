@@ -70,7 +70,7 @@ const PropertyIntelligenceReportPage = () => {
           <h2 style={cardTitleStyle}>Commute Intelligence</h2>
           <p style={lineStyle}>Commute score: <strong>{property.commuteScore?.score ?? 50}%</strong></p>
           <p style={lineStyle}>Label: <strong>{property.commuteScore?.label ?? 'Unknown'}</strong></p>
-          <p style={lineStyle}>{property.commuteScore?.recommendation || 'Add commute minutes for richer insights.'}</p>
+          <p style={lineStyle}>{property.commuteScore?.recommendation || 'Add location details for richer insights.'}</p>
         </article>
 
         <article style={cardStyle}>

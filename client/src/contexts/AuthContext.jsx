@@ -52,8 +52,22 @@ export const AuthProvider = ({ children }) => {
     const loadUserFromStorage = async () => {
       dispatch({ type: 'SET_LOADING', payload: true });
       try {
-        const storedToken = localStorage.getItem('token');
-        const storedUserString = localStorage.getItem('user');
+        let storedToken = sessionStorage.getItem('token');
+        let storedUserString = sessionStorage.getItem('user');
+
+        // One-time migration from previous shared localStorage auth to tab-scoped sessionStorage.
+        if (!storedToken || !storedUserString) {
+          const legacyToken = localStorage.getItem('token');
+          const legacyUser = localStorage.getItem('user');
+          if (legacyToken && legacyUser) {
+            sessionStorage.setItem('token', legacyToken);
+            sessionStorage.setItem('user', legacyUser);
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            storedToken = legacyToken;
+            storedUserString = legacyUser;
+          }
+        }
 
         if (storedToken && storedUserString) {
           const storedUser = JSON.parse(storedUserString);
@@ -85,13 +99,18 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = (userData, token) => {
-    localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('token', token);
+    sessionStorage.setItem('user', JSON.stringify(userData));
+    sessionStorage.setItem('token', token);
+    // Keep legacy keys cleared so tabs remain independent.
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
     authService.setAuthToken(token); // Update axios headers
     dispatch({ type: 'LOGIN_SUCCESS', payload: { user: userData, token } });
   };
 
   const logout = () => {
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('token');
     authService.setAuthToken(null); // Update axios headers

@@ -9,7 +9,7 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -27,6 +27,8 @@ apiClient.interceptors.response.use(
       console.error('Unauthorized (401). Token invalid/expired.');
       // Attempt to clear session and redirect.
       // A more robust solution might involve an event bus or a callback to AuthContext.
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('token');
       // Avoid redirecting if already on login page or if it's a non-browser environment

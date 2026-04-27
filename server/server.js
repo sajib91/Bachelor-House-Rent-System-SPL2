@@ -173,6 +173,8 @@ io.use(async (socket, next) => {
 propertyController.setSocketServer(io);
 
 io.on('connection', (socket) => {
+  socket.join(`user:${socket.data.user.id}`);
+
   socket.on('property:join', async (propertyId) => {
     if (!propertyId) return;
 

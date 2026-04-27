@@ -34,8 +34,8 @@ const CreateBlogPage = () => {
         e.preventDefault();
         setLoading(true);
         try {
-            // Get JWT from localStorage
-            const token = localStorage.getItem('token');
+            // Get JWT from tab-scoped auth session
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
             if (!token) {
                 toast.error('You must be logged in to create a blog.');
                 navigate('/login');

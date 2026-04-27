@@ -5,7 +5,7 @@ const SOCKET_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 
 let socketInstance = null;
 
-const getToken = () => localStorage.getItem('token') || '';
+const getToken = () => sessionStorage.getItem('token') || localStorage.getItem('token') || '';
 
 export const getSocket = () => {
   if (!socketInstance) {

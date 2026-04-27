@@ -306,6 +306,45 @@ class User {
     }));
   }
 
+  static async findAllForAdmin({ role = '', search = '' } = {}) {
+    const whereParts = ["id IS NOT NULL"];
+    const params = [];
+
+    if (role && ['Tenant', 'Landlord', 'Admin'].includes(role)) {
+      whereParts.push('role = ?');
+      params.push(role);
+    }
+
+    if (search) {
+      const like = `%${String(search).trim()}%`;
+      whereParts.push('(fullName LIKE ? OR username LIKE ? OR email LIKE ? OR phoneNumber LIKE ?)');
+      params.push(like, like, like, like);
+    }
+
+    const [rows] = await this.pool.query(
+      `SELECT id, username, fullName, email, phoneNumber, role, isVerified,
+              verificationStatus, verificationType, verificationFeedback,
+              instituteType, instituteName, hometown, createdAt, updatedAt
+       FROM users
+       WHERE ${whereParts.join(' AND ')}
+       ORDER BY createdAt DESC`
+      ,
+      params
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      _id: String(row.id),
+      id: row.id,
+      isVerified: Boolean(row.isVerified),
+    }));
+  }
+
+  static async deleteById(id) {
+    const [result] = await this.pool.query('DELETE FROM users WHERE id = ?', [id]);
+    return Number(result.affectedRows || 0) > 0;
+  }
+
   static async create(data) {
     if (Array.isArray(data)) {
       const created = [];

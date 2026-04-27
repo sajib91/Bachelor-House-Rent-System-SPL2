@@ -1,37 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import apiClient from '../services/apiService';
 
 const HomePage = () => {
   const { isAuthenticated, user } = useAuth();
-  const [featuredListings, setFeaturedListings] = useState([]);
 
   const isAdmin = user?.role === 'Admin';
   const isLandlord = user?.role === 'Landlord';
   const showCreateAccount = !isAuthenticated;
   const showHostRoom = !isAdmin && (isLandlord || !isAuthenticated);
-  const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
-
-  const resolveImageUrl = (photoUrl) => {
-    if (!photoUrl || typeof photoUrl !== 'string') return '';
-    return photoUrl.startsWith('http') ? photoUrl : `${backendBaseUrl}${photoUrl.startsWith('/') ? '' : '/'}${photoUrl}`;
-  };
-
-  useEffect(() => {
-    const loadFeaturedListings = async () => {
-      try {
-        const response = await apiClient.get('/properties', {
-          params: { limit: 3, sortBy: 'smartMatch', smartMatch: 'true' },
-        });
-        setFeaturedListings(Array.isArray(response.data.properties) ? response.data.properties : []);
-      } catch (error) {
-        setFeaturedListings([]);
-      }
-    };
-
-    loadFeaturedListings();
-  }, []);
 
   return (
     <div style={pageStyle}>
@@ -91,43 +68,6 @@ const HomePage = () => {
           ))}
         </div>
       </section>
-
-      <section style={contentSectionStyle}>
-        <div style={sectionHeaderRowStyle}>
-          <div>
-            <h2 style={sectionTitleStyle}>Featured seats</h2>
-            <p style={sectionTextStyle}>A few live listings pulled from the marketplace.</p>
-          </div>
-          <Link to="/properties" style={textLinkStyle}>View all listings</Link>
-        </div>
-
-        <div style={listingGridStyle}>
-          {featuredListings.length > 0 ? featuredListings.map((listing) => (
-            <article key={listing._id} style={listingCardStyle}>
-              {resolveImageUrl(listing.photos?.[0]) ? (
-                <img src={resolveImageUrl(listing.photos?.[0])} alt={listing.title} style={listingImageStyle} />
-              ) : (
-                <div style={listingImagePlaceholderStyle}>No image available</div>
-              )}
-              <div style={listingMetaStyle}>{listing.area}</div>
-              <h3 style={{ margin: '10px 0 6px' }}>{listing.title}</h3>
-              <p style={mutedTextStyle}>{listing.nearbyUniversity || 'Near university corridor'}</p>
-              {typeof listing.matchScore === 'number' ? <div style={featuredMatchBadgeStyle}>Smart Match {listing.matchScore}%</div> : null}
-              <div style={listingInfoRowStyle}>
-                <span>{listing.genderPreference}</span>
-                <span>{listing.availableSeats}/{listing.totalSeats} seats</span>
-              </div>
-              <div style={rentStyle}>৳{listing.monthlyRentPerSeat}/seat</div>
-              <Link to={`/properties/${listing._id}`} style={listingLinkStyle}>Open details</Link>
-            </article>
-          )) : (
-            <article style={{ ...listingCardStyle, gridColumn: '1 / -1' }}>
-              <h3 style={{ marginTop: 0 }}>No listings yet</h3>
-              <p style={mutedTextStyle}>Landlords can add the first verified seat listing from the host flow.</p>
-            </article>
-          )}
-        </div>
-      </section>
     </div>
   );
 };
@@ -148,22 +88,11 @@ const featureTitleStyle = { color: '#ffd166', fontWeight: 700 };
 const featureTextStyle = { marginTop: '6px', color: 'rgba(255,255,255,0.72)', fontSize: '0.95rem' };
 const contentSectionStyle = { paddingTop: '72px' };
 const sectionHeaderStyle = { marginBottom: '18px' };
-const sectionHeaderRowStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: '16px', flexWrap: 'wrap', marginBottom: '18px' };
 const sectionTitleStyle = { fontSize: '2rem', margin: 0 };
 const sectionTextStyle = { color: 'rgba(246,241,232,0.72)', marginTop: '8px' };
 const stepsGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' };
 const stepCardStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' };
 const stepTextStyle = { marginBottom: 0, color: 'rgba(255,255,255,0.72)' };
-const listingGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' };
-const listingCardStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' };
-const listingImageStyle = { width: '100%', height: '180px', objectFit: 'cover', borderRadius: '16px', marginBottom: '14px', border: '1px solid rgba(255,255,255,0.08)' };
-const listingImagePlaceholderStyle = { width: '100%', height: '180px', borderRadius: '16px', marginBottom: '14px', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', placeItems: 'center', color: 'rgba(255,255,255,0.55)', background: 'rgba(255,255,255,0.04)' };
-const listingMetaStyle = { fontSize: '0.82rem', letterSpacing: '0.04em', textTransform: 'uppercase', color: '#ffd166' };
-const featuredMatchBadgeStyle = { marginTop: '10px', display: 'inline-block', padding: '6px 10px', borderRadius: '999px', fontSize: '0.8rem', border: '1px solid rgba(143, 240, 180, 0.45)', color: '#8ff0b4', background: 'rgba(56,161,105,0.18)', fontWeight: 700 };
 const mutedTextStyle = { margin: 0, color: 'rgba(255,255,255,0.72)' };
-const listingInfoRowStyle = { marginTop: '14px', display: 'flex', justifyContent: 'space-between', gap: '12px', color: 'rgba(255,255,255,0.8)' };
-const rentStyle = { marginTop: '18px', fontSize: '1.4rem', fontWeight: 800 };
-const listingLinkStyle = { display: 'inline-block', marginTop: '18px', color: '#0b1220', background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', padding: '10px 14px', borderRadius: '999px', fontWeight: 700, textDecoration: 'none' };
-const textLinkStyle = { color: '#ffd166', fontWeight: 700, textDecoration: 'none' };
 
 export default HomePage;

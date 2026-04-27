@@ -100,4 +100,19 @@ router.get('/admin/pending-verifications', protect, authorizeRoles('Admin'), aut
 // @access  Private/Admin
 router.patch('/admin/users/:userId/verification', protect, authorizeRoles('Admin'), authController.reviewUserVerification);
 
+// @route   GET /api/auth/admin/users
+// @desc    List all users for moderation
+// @access  Private/Admin
+router.get('/admin/users', protect, authorizeRoles('Admin'), authController.getAllUsersForAdmin);
+
+// @route   PATCH /api/auth/admin/users/:userId/ban
+// @desc    Ban/unban user account
+// @access  Private/Admin
+router.patch('/admin/users/:userId/ban', protect, authorizeRoles('Admin'), authController.setUserBanStatus);
+
+// @route   DELETE /api/auth/admin/users/:userId
+// @desc    Delete user account
+// @access  Private/Admin
+router.delete('/admin/users/:userId', protect, authorizeRoles('Admin'), authController.deleteUserAccountByAdmin);
+
 module.exports = router; // Export the router to be used in server.js

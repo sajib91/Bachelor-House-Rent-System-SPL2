@@ -138,11 +138,6 @@ const Navbar = () => {
               Host a Seat
             </NavLink>
           )}
-          {isAuthenticated && (user?.role === 'Landlord' || user?.role === 'Admin') && (
-            <NavLink to="/landlord/reports" style={linkStyle} onClick={toggleMenu}>
-              Listing Reports
-            </NavLink>
-          )}
           {user?.role !== 'Admin' && (
             <NavLink to="/contact" style={linkStyle} onClick={toggleMenu}>
               Contact

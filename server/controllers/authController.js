@@ -1,4 +1,5 @@
 const User = require('../models/User'); // User model
+const Property = require('../models/Property');
 const jwt = require('jsonwebtoken');    // For generating JWT
 const dotenv = require('dotenv');       // To access JWT_SECRET from .env
 const crypto = require('crypto');
@@ -16,6 +17,12 @@ const OTP_REQUEST_WINDOW_MS = Number(process.env.PASSWORD_RESET_OTP_WINDOW_MS ||
 const SYSTEM_ADMIN_USER_ID = process.env.SYSTEM_ADMIN_USER_ID || 'admin';
 const SYSTEM_ADMIN_PASSWORD = process.env.SYSTEM_ADMIN_PASSWORD || 'admin@123';
 const SYSTEM_ADMIN_TOKEN_SUBJECT = 'system-admin';
+const BANNED_PREFIX = '[BANNED]';
+
+const isBannedUser = (user) => {
+  const feedback = String(user?.verificationFeedback || '').trim();
+  return user?.verificationStatus === 'Rejected' && feedback.startsWith(BANNED_PREFIX);
+};
 
 const buildUsername = (fullName, email) => {
   const seed = (fullName || email || 'tenant').toString().trim().toLowerCase();
@@ -287,6 +294,13 @@ exports.loginUser = async (req, res, next) => {
     }
 
     if (['Tenant', 'Landlord'].includes(user.role)) {
+      if (isBannedUser(user)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been banned by the system admin. Please contact support.',
+        });
+      }
+
       const currentVerificationStatus = user.verificationStatus || (user.isVerified ? 'Verified' : 'Pending');
 
       if (currentVerificationStatus !== 'Verified' || !user.isVerified) {
@@ -318,6 +332,10 @@ exports.loginUser = async (req, res, next) => {
         email: user.email,
         phoneNumber: user.phoneNumber,
         role: user.role,
+        isVerified: user.isVerified,
+        verificationStatus: user.verificationStatus,
+        verificationType: user.verificationType,
+        verificationFeedback: user.verificationFeedback,
       },
     });
 
@@ -579,6 +597,7 @@ exports.getCurrentUser = async (req, res, next) => {
         hometown: user.hometown,
         profilePictureUrl: user.profilePictureUrl,
         verificationFeedback: user.verificationFeedback,
+        isBanned: isBannedUser(user),
         verificationReviewedAt: user.verificationReviewedAt,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
@@ -679,6 +698,169 @@ exports.reviewUserVerification = async (req, res, next) => {
         isVerified: user.isVerified,
         verificationFeedback: user.verificationFeedback,
         verificationReviewedAt: user.verificationReviewedAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all users for admin moderation
+// @route   GET /api/auth/admin/users
+// @access  Private/Admin
+exports.getAllUsersForAdmin = async (req, res, next) => {
+  try {
+    const users = await User.findAllForAdmin({
+      role: req.query.role,
+      search: req.query.search,
+    });
+
+    const filtered = users.filter((user) => String(user.id) !== SYSTEM_ADMIN_TOKEN_SUBJECT);
+
+    const enriched = filtered.map((user) => ({
+      ...user,
+      isBanned: isBannedUser(user),
+    }));
+
+    res.status(200).json({ success: true, users: enriched });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Ban or unban a user account
+// @route   PATCH /api/auth/admin/users/:userId/ban
+// @access  Private/Admin
+exports.setUserBanStatus = async (req, res, next) => {
+  try {
+    const { banned, reason } = req.body;
+    if (typeof banned !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'banned must be true or false.' });
+    }
+
+    if (String(req.params.userId) === SYSTEM_ADMIN_TOKEN_SUBJECT) {
+      return res.status(400).json({ success: false, message: 'System admin account cannot be banned.' });
+    }
+
+    const user = await User.findById(req.params.userId, { includePassword: true });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    if (banned) {
+      const note = String(reason || 'Banned by system admin.').trim();
+      user.verificationStatus = 'Rejected';
+      user.isVerified = false;
+      user.verificationFeedback = `${BANNED_PREFIX} ${note}`;
+      user.verificationReviewedAt = new Date();
+    } else {
+      user.verificationStatus = 'Verified';
+      user.isVerified = true;
+      user.verificationFeedback = null;
+      user.verificationReviewedAt = new Date();
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: banned ? 'User account banned successfully.' : 'User account unbanned successfully.',
+      user: {
+        id: user._id,
+        role: user.role,
+        isVerified: user.isVerified,
+        verificationStatus: user.verificationStatus,
+        verificationFeedback: user.verificationFeedback,
+        isBanned: isBannedUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete a user account
+// @route   DELETE /api/auth/admin/users/:userId
+// @access  Private/Admin
+exports.deleteUserAccountByAdmin = async (req, res, next) => {
+  try {
+    if (String(req.params.userId) === SYSTEM_ADMIN_TOKEN_SUBJECT) {
+      return res.status(400).json({ success: false, message: 'System admin account cannot be deleted.' });
+    }
+
+    if (String(req.user?._id) === String(req.params.userId)) {
+      return res.status(400).json({ success: false, message: 'You cannot delete your own admin account.' });
+    }
+
+    const user = await User.findById(req.params.userId, { includePassword: true });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const allProperties = await Property.find({});
+    let removedListings = 0;
+    let updatedListings = 0;
+
+    for (const property of allProperties) {
+      const isOwner = String(property.landlord) === String(user._id);
+      if (isOwner) {
+        await Property.deleteById(property._id);
+        removedListings += 1;
+        continue;
+      }
+
+      const originalApplicationsLength = (property.seatApplications || []).length;
+      const originalPaymentsLength = (property.rentPayments || []).length;
+      const originalMessagesLength = (property.messages || []).length;
+      const originalReviewsLength = (property.reviews || []).length;
+      const removedApplications = (property.seatApplications || []).filter(
+        (application) => String(application.tenant) === String(user._id)
+      );
+
+      property.seatApplications = (property.seatApplications || []).filter(
+        (application) => String(application.tenant) !== String(user._id)
+      );
+
+      if (removedApplications.length > 0) {
+        const approvedSeats = removedApplications
+          .filter((application) => application.status === 'Approved')
+          .reduce((sum, application) => sum + Number(application.seatsRequested || 1), 0);
+
+        if (approvedSeats > 0) {
+          property.availableSeats = Number(property.availableSeats || 0) + approvedSeats;
+          property.availableSeats = Math.min(Number(property.totalSeats || property.availableSeats), property.availableSeats);
+        }
+      }
+
+      property.rentPayments = (property.rentPayments || []).filter(
+        (payment) => String(payment.tenant) !== String(user._id)
+      );
+      property.messages = (property.messages || []).filter(
+        (message) => String(message.sender) !== String(user._id)
+      );
+      property.reviews = (property.reviews || []).filter(
+        (review) => String(review.tenant) !== String(user._id)
+      );
+
+      const changed = originalApplicationsLength !== (property.seatApplications || []).length
+        || originalPaymentsLength !== (property.rentPayments || []).length
+        || originalMessagesLength !== (property.messages || []).length
+        || originalReviewsLength !== (property.reviews || []).length;
+
+      if (changed || removedApplications.length > 0) {
+        await property.save();
+        updatedListings += 1;
+      }
+    }
+
+    await User.deleteById(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: 'User account deleted successfully.',
+      cleanup: {
+        removedListings,
+        updatedListings,
       },
     });
   } catch (error) {

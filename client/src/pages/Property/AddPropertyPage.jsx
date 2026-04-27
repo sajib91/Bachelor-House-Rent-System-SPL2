@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import axios from 'axios';
 import { useAuth } from '../../contexts/AuthContext';
@@ -7,13 +7,75 @@ import apiClient from '../../services/apiService';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
 
+const normalizeMapLink = (rawValue = '') => {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^www\./i.test(value)) return `https://${value}`;
+  return '';
+};
+
 const AddPropertyPage = () => {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEditMode = useMemo(() => Boolean(id), [id]);
   const [loading, setLoading] = useState(false);
+  const [isPrefilling, setIsPrefilling] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [photoUrls, setPhotoUrls] = useState([]);
   const [form, setForm] = useState(initialFormState);
+
+  useEffect(() => {
+    const loadExistingListing = async () => {
+      if (!isEditMode || authLoading || !isAuthenticated) {
+        return;
+      }
+
+      try {
+        setIsPrefilling(true);
+        const response = await apiClient.get(`/properties/${id}`);
+        const property = response.data || {};
+
+        setForm({
+          title: property.title || '',
+          area: property.area || '',
+          nearbyUniversity: property.nearbyUniversity || '',
+          address: property.address || '',
+          totalSeats: Number(property.totalSeats || 1),
+          availableSeats: Number(property.availableSeats || property.totalSeats || 1),
+          genderPreference: property.genderPreference || 'Male',
+          roomType: property.roomType || 'Shared Seat',
+          monthlyRentPerSeat: Number(property.monthlyRentPerSeat || 0),
+          securityDeposit: Number(property.securityDeposit || 0),
+          mealSystem: property.mealSystem || 'Mixed',
+          amenities: Array.isArray(property.amenities) ? property.amenities : [],
+          rules: {
+            gateClosingTime: property.rules?.gateClosingTime || '',
+            guestPolicy: property.rules?.guestPolicy || '',
+            smokingRules: property.rules?.smokingRules || '',
+            attachedBath: Boolean(property.rules?.attachedBath),
+            filteredWater: Boolean(property.rules?.filteredWater),
+            lift: Boolean(property.rules?.lift),
+            wifi: Boolean(property.rules?.wifi),
+          },
+          description: property.description || '',
+          mapLabel: property.mapLocation?.link || property.mapLocation?.label || '',
+          landlordWhatsapp: property.landlordWhatsapp || '',
+          landlordBkash: property.landlordBkash || '',
+          landlordNagad: property.landlordNagad || '',
+          rentalMonth: property.rentalMonth || '',
+        });
+        setPhotoUrls(Array.isArray(property.photos) ? property.photos : []);
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Unable to load listing for editing.');
+      } finally {
+        setIsPrefilling(false);
+      }
+    };
+
+    loadExistingListing();
+  }, [authLoading, id, isAuthenticated, isEditMode]);
 
   const uploadPhotos = async (event) => {
     const files = Array.from(event.target.files || []);
@@ -70,11 +132,11 @@ const AddPropertyPage = () => {
       const mapLocation = mapLocationInput
         ? {
             label: mapLocationInput,
-            link: mapLocationInput.startsWith('http') ? mapLocationInput : '',
+            link: normalizeMapLink(mapLocationInput),
           }
         : undefined;
 
-      await apiClient.post('/properties', {
+      const payload = {
         ...form,
         photos: photoUrls,
         totalSeats: Number(form.totalSeats),
@@ -86,9 +148,17 @@ const AddPropertyPage = () => {
         landlordBkash: form.landlordBkash,
         landlordNagad: form.landlordNagad,
         rentalMonth: form.rentalMonth,
-      });
-      toast.success('Seat listing created successfully.');
-      navigate('/properties');
+      };
+
+      if (isEditMode) {
+        await apiClient.patch(`/properties/${id}`, payload);
+        toast.success('Seat listing updated successfully.');
+        navigate('/dashboard');
+      } else {
+        await apiClient.post('/properties', payload);
+        toast.success('Seat listing created successfully.');
+        navigate('/properties');
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to create listing.');
     } finally {
@@ -110,12 +180,16 @@ const AddPropertyPage = () => {
     );
   }
 
+  if (isEditMode && isPrefilling) {
+    return <div style={stateStyle}>Loading listing data...</div>;
+  }
+
   return (
     <div style={pageStyle}>
       <header style={headerStyle}>
         <div>
           <div style={eyebrowStyle}>Host flow</div>
-          <h1 style={titleStyle}>Create a bachelor seat listing</h1>
+          <h1 style={titleStyle}>{isEditMode ? 'Edit your seat listing' : 'Create a bachelor seat listing'}</h1>
           <p style={subtleTextStyle}>Specify seats, gender preference, rent per seat, rules, and the location relative to campus or office.</p>
         </div>
       </header>
@@ -225,7 +299,7 @@ const AddPropertyPage = () => {
         </div>
 
         <div style={actionRowStyle}>
-          <button type="submit" disabled={loading || uploading} style={primaryButtonStyle}>{loading ? 'Publishing...' : 'Publish seat listing'}</button>
+          <button type="submit" disabled={loading || uploading} style={primaryButtonStyle}>{loading ? (isEditMode ? 'Updating...' : 'Publishing...') : (isEditMode ? 'Update seat listing' : 'Publish seat listing')}</button>
           <button type="button" onClick={() => navigate('/properties')} style={secondaryButtonStyle}>Cancel</button>
         </div>
       </form>

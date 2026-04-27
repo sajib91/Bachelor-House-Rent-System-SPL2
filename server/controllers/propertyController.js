@@ -56,6 +56,48 @@ const containsIgnoreCase = (source = '', target = '') => {
     return String(source).toLowerCase().includes(String(target).toLowerCase());
 };
 
+const DUMMY_LISTING_KEYWORDS = [
+    'dummy',
+    'temp',
+    'temporary',
+    'test',
+    'sample',
+    'demo',
+    'mock',
+    'placeholder',
+    'lorem',
+    'asdf',
+    'qwerty',
+    'abc123',
+];
+
+const isLikelyDummyListing = (property = {}) => {
+    const textBlob = [
+        property.title,
+        property.description,
+        property.area,
+        property.address,
+        property.landlordName,
+    ]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ');
+
+    const hasKeyword = DUMMY_LISTING_KEYWORDS.some((keyword) => textBlob.includes(keyword));
+    const hasTooShortTitle = String(property.title || '').trim().length > 0 && String(property.title || '').trim().length < 6;
+    const hasNoPhotos = !Array.isArray(property.photos) || property.photos.length === 0;
+    const hasZeroOrInvalidRent = Number(property.monthlyRentPerSeat || 0) <= 0;
+
+    let score = 0;
+    if (hasKeyword) score += 2;
+    if (hasTooShortTitle) score += 1;
+    if (hasNoPhotos) score += 1;
+    if (hasZeroOrInvalidRent) score += 1;
+
+    return score >= 2;
+};
+
+const isPaymentCompletedStatus = (status = '') => ['Paid', 'Complete'].includes(String(status));
+
 const getRuntimeThresholds = async () => {
     const defaults = getDefaultThresholds();
     const settings = await IntelligenceSettings.findOne({ key: 'global' });
@@ -403,6 +445,14 @@ const getPropertyById = asyncHandler(async (req, res) => {
         throw new Error('Property not found');
     }
 
+    const isPubliclyVisible = property.publicationStatus === 'Approved' && property.isActive !== false;
+    const isOwnerOrAdmin = req.user && (req.user.role === 'Admin' || String(property.landlord) === String(req.user._id));
+
+    if (!isPubliclyVisible && !isOwnerOrAdmin) {
+        res.status(404);
+        throw new Error('Property not found');
+    }
+
     property.views = (property.views || 0) + 1;
     await property.save();
 
@@ -695,6 +745,50 @@ const adminRemoveProperty = asyncHandler(async (req, res) => {
     });
 });
 
+// @desc    Bulk remove dummy/temp listings (admin moderation)
+// @route   PATCH /api/properties/admin/cleanup-dummy
+// @access  Private/Admin
+const cleanupDummyListings = asyncHandler(async (req, res) => {
+    const properties = await Property.find({ isActive: true });
+    const removed = [];
+
+    for (const property of properties) {
+        if (!isLikelyDummyListing(property)) {
+            continue;
+        }
+
+        property.isActive = false;
+        property.publicationStatus = 'Rejected';
+        property.messages = property.messages || [];
+        property.messages.push({
+            sender: req.user._id,
+            senderName: req.user.fullName || req.user.username || 'System Admin',
+            senderRole: 'Admin',
+            message: 'Listing removed by admin cleanup because it looked like dummy or temporary content.',
+            moderation: { score: 0, riskLevel: 'Low', flags: ['DUMMY_LISTING_CLEANUP'] },
+            meta: {
+                type: 'ADMIN_DUMMY_CLEANUP',
+                removedAt: new Date().toISOString(),
+            },
+        });
+
+        await property.save();
+        removed.push({
+            id: property._id,
+            title: property.title,
+        });
+    }
+
+    res.status(200).json({
+        success: true,
+        message: removed.length > 0
+            ? `${removed.length} dummy/temp listing(s) removed successfully.`
+            : 'No dummy/temp listings found to remove.',
+        removedCount: removed.length,
+        removed,
+    });
+});
+
 // @desc    Apply for a seat
 // @route   POST /api/properties/:id/apply
 // @access  Private
@@ -706,9 +800,19 @@ const applyForSeat = asyncHandler(async (req, res) => {
         throw new Error('Property not found');
     }
 
+    if (property.publicationStatus !== 'Approved' || property.isActive === false) {
+        res.status(403);
+        throw new Error('This property is not available for seat applications.');
+    }
+
     if (req.user.role !== 'Tenant') {
         res.status(403);
         throw new Error('Only Tenant accounts can apply for seats.');
+    }
+
+    if (req.user.verificationStatus !== 'Verified') {
+        res.status(403);
+        throw new Error('Only verified registered tenants can apply for seats.');
     }
 
     const seatsRequested = Number(req.body.seatsRequested || 1);
@@ -749,11 +853,23 @@ const applyForSeat = asyncHandler(async (req, res) => {
             verificationType: req.body.studentIdType || req.user.verificationType || 'Student ID',
             role: 'Tenant',
         }),
+        appliedAt: new Date().toISOString(),
         roommateRequest: Boolean(req.body.roommateRequest),
         note: req.body.note || '',
     });
 
     await property.save();
+
+    if (io && property.landlord) {
+        io.to(`user:${String(property.landlord)}`).emit('seat:application:new', {
+            propertyId: String(property._id),
+            propertyTitle: property.title,
+            tenantName: req.user.fullName || req.user.username || req.user.email,
+            seatsRequested,
+            appliedAt: new Date().toISOString(),
+        });
+    }
+
     res.status(201).json({ success: true, message: 'Seat request submitted successfully.' });
 });
 
@@ -1114,7 +1230,7 @@ const getRentTracker = asyncHandler(async (req, res) => {
             monthlyRentPerSeat: property.monthlyRentPerSeat,
             tenants,
             rentalRisk: computeRentalRisk({
-                unpaidCount: tenants.filter((tenant) => !tenant.payment || tenant.payment.status !== 'Paid').length,
+                unpaidCount: tenants.filter((tenant) => !tenant.payment || !isPaymentCompletedStatus(tenant.payment.status)).length,
                 rejectedCount: tenants.filter((tenant) => tenant.payment?.status === 'Rejected').length,
                 pendingCount: tenants.filter((tenant) => tenant.payment?.status === 'Pending').length,
                 occupancyRatio: Number(property.totalSeats || 0) > 0
@@ -1151,14 +1267,15 @@ const updateRentPaymentStatus = asyncHandler(async (req, res) => {
     }
 
     const { status } = req.body;
-    if (!['Pending', 'Paid', 'Rejected'].includes(status)) {
+    if (!['Pending', 'Paid', 'Complete', 'Rejected'].includes(status)) {
         res.status(400);
         throw new Error('Invalid payment status.');
     }
 
     payment.status = status;
-    if (status === 'Paid') {
+    if (isPaymentCompletedStatus(status)) {
         payment.paidAt = new Date();
+        payment.completedAt = new Date();
     }
 
     await property.save();
@@ -1175,7 +1292,8 @@ const getTenantReminders = asyncHandler(async (req, res) => {
         throw new Error('Only tenant accounts can access reminders.');
     }
 
-    const month = req.query.month || new Date().toISOString().slice(0, 7);
+    const requestedMonth = String(req.query.month || '').trim();
+    const fallbackMonth = new Date().toISOString().slice(0, 7);
     const properties = await Property.find({
         seatApplications: {
             $elemMatch: { tenant: req.user._id, status: 'Approved' },
@@ -1187,22 +1305,24 @@ const getTenantReminders = asyncHandler(async (req, res) => {
             (application) => String(application.tenant) === String(req.user._id) && application.status === 'Approved'
         );
 
+        const dueMonth = requestedMonth || String(property.rentalMonth || '').trim() || fallbackMonth;
+
         const seatsBooked = Number(booking?.seatsRequested || 1);
         const payment = (property.rentPayments || []).find(
-            (entry) => String(entry.tenant) === String(req.user._id) && entry.month === month
+            (entry) => String(entry.tenant) === String(req.user._id) && entry.month === dueMonth
         );
 
         return {
             propertyId: property._id,
             title: property.title,
-            month,
+            month: dueMonth,
             amount: Number(property.monthlyRentPerSeat || 0) * seatsBooked,
             status: payment?.status || 'Unpaid',
         };
     });
 
     const reminderEngine = getTenantReminderSummary(records);
-    res.status(200).json({ success: true, month, reminderEngine });
+    res.status(200).json({ success: true, month: requestedMonth || fallbackMonth, reminderEngine });
 });
 
 // @desc    Get landlord listing quality + risk + pricing assistant
@@ -1225,7 +1345,7 @@ const getLandlordIntelligence = asyncHandler(async (req, res) => {
         const property = propertyDoc.toObject();
         const approvedTenants = (property.seatApplications || []).filter((application) => application.status === 'Approved');
         const payments = (property.rentPayments || []).filter((payment) => payment.month === month);
-        const unpaidCount = approvedTenants.filter((tenant) => !payments.some((payment) => String(payment.tenant) === String(tenant.tenant) && payment.status === 'Paid')).length;
+        const unpaidCount = approvedTenants.filter((tenant) => !payments.some((payment) => String(payment.tenant) === String(tenant.tenant) && isPaymentCompletedStatus(payment.status))).length;
 
         return {
             propertyId: property._id,
@@ -1386,6 +1506,7 @@ module.exports = {
     getPendingPublications,
     reviewPropertyPublication,
     adminRemoveProperty,
+    cleanupDummyListings,
     updateProperty,
     deleteProperty,
     applyForSeat,

@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) NOT NULL UNIQUE,
   phoneNumber VARCHAR(20),
   password VARCHAR(255) NOT NULL,
-  role ENUM('Tenant', 'Landlord', 'Admin', 'Content_Creator', 'Owner', 'User') DEFAULT 'Tenant',
+  role ENUM('Tenant', 'Landlord', 'Admin','User') DEFAULT 'Tenant',
   isVerified BOOLEAN DEFAULT FALSE,
   verificationStatus VARCHAR(50),
   verificationType VARCHAR(100),

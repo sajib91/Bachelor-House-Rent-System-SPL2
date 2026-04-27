@@ -18,6 +18,7 @@ router.get('/tenant/reminders', protect, authorizeRoles('Tenant'), propertyContr
 router.get('/admin/pending-publications', protect, authorizeRoles('Admin'), propertyController.getPendingPublications);
 router.patch('/admin/:id/publication', protect, authorizeRoles('Admin'), propertyController.reviewPropertyPublication);
 router.patch('/admin/:id/remove', protect, authorizeRoles('Admin'), propertyController.adminRemoveProperty);
+router.patch('/admin/cleanup-dummy', protect, authorizeRoles('Admin'), propertyController.cleanupDummyListings);
 router.get('/admin/insights', protect, authorizeRoles('Admin'), propertyController.getAdminInsights);
 router.get('/admin/intelligence-thresholds', protect, authorizeRoles('Admin'), propertyController.getIntelligenceThresholds);
 router.patch('/admin/intelligence-thresholds', protect, authorizeRoles('Admin'), propertyController.updateIntelligenceThresholds);

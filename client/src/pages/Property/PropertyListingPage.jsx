@@ -40,7 +40,7 @@ const PropertyListingPage = () => {
         setListings(Array.isArray(response.data.properties) ? response.data.properties : []);
         setTotalPages(response.data.totalPages || 1);
       } catch (fetchError) {
-        setError('Failed to load seat listings. Please try again later.');
+        setError('Failed to load approved seat listings. Please try again later.');
         setListings([]);
       } finally {
         setLoading(false);
@@ -75,9 +75,9 @@ const PropertyListingPage = () => {
     <div style={pageStyle}>
       <header style={headerStyle}>
         <div>
-          <div style={eyebrowStyle}>Search & filter</div>
-          <h1 style={titleStyle}>Find the right seat near campus or office</h1>
-          <p style={subtleTextStyle}>Filter by area, budget, gender preference, room type, and the amenities that matter for bachelor living.</p>
+          <div style={eyebrowStyle}>Approved listings</div>
+          <h1 style={titleStyle}>Verified landlord seats</h1>
+          <p style={subtleTextStyle}>This page shows landlord listings only after admin approval. Verified tenants can open each seat and apply.</p>
         </div>
       </header>
 
@@ -141,13 +141,13 @@ const PropertyListingPage = () => {
         </div>
       </section>
 
-      {loading ? <div style={stateStyle}>Loading seat listings...</div> : null}
+      {loading ? <div style={stateStyle}>Loading approved listings...</div> : null}
       {error ? <div style={stateStyle}>{error}</div> : null}
 
       {!loading && !error && (
         <>
           {listingCards.length === 0 ? (
-            <div style={stateStyle}>No listings match your filters.</div>
+            <div style={stateStyle}>No approved listings are available yet.</div>
           ) : (
             <section style={cardsGridStyle}>
               {listingCards.map((listing) => (

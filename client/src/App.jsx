@@ -19,7 +19,6 @@ const ContactUsPage = lazy(() => import('./pages/ContactUs/ContactUsPage.jsx'));
 const PropertyListingPage = lazy(() => import('./pages/Property/PropertyListingPage.jsx'));
 const PropertyDetailsPage = lazy(() => import('./pages/Property/PropertyDetailsPage.jsx'));
 const AddPropertyPage = lazy(() => import('./pages/Property/AddPropertyPage.jsx'));
-const LandlordReportsPage = lazy(() => import('./pages/Property/LandlordReportsPage.jsx'));
 const PropertyIntelligenceReportPage = lazy(() => import('./pages/Property/PropertyIntelligenceReportPage.jsx'));
 
 const LoadingFallback = () => <div style={{ textAlign: 'center', color: 'var(--color-text-primary)', marginTop: '60px', fontSize: '1.5rem' }}>Loading Page...</div>;
@@ -54,7 +53,7 @@ function App() {
 
           <Route element={<ProtectedRoute allowedRoles={['Landlord', 'Admin']} />}>
             <Route path="/add-property" element={<AddPropertyPage />} />
-            <Route path="/landlord/reports" element={<LandlordReportsPage />} />
+            <Route path="/properties/:id/edit" element={<AddPropertyPage />} />
             <Route path="/properties/:id/intelligence-report" element={<PropertyIntelligenceReportPage />} />
           </Route>
 

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: to-let-globe-server
+    name: bhrs-spl-2-server
     runtime: node
     rootDir: server
     plan: free

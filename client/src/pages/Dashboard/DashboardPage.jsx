@@ -1,15 +1,59 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { jsPDF } from 'jspdf';
 import { useAuth } from '../../contexts/AuthContext';
 import authService from '../../services/authService';
 import apiClient from '../../services/apiService';
+import { getSocket } from '../../services/socketService';
+
+const isPaymentCompleted = (status) => ['Paid', 'Complete'].includes(String(status || ''));
+
+const generatePaymentReceiptPdf = (receipt = {}) => {
+  const doc = new jsPDF();
+  const rows = [
+    ['Receipt ID', receipt.receiptId || 'N/A'],
+    ['Status', receipt.status || 'Complete'],
+    ['Completed At', receipt.completedAt ? new Date(receipt.completedAt).toLocaleString() : new Date().toLocaleString()],
+    ['Provider', receipt.provider || 'N/A'],
+    ['Month', receipt.month || 'N/A'],
+    ['Amount', `৳${Number(receipt.amount || 0)}`],
+    ['Transaction ID', receipt.transactionId || 'N/A'],
+  ];
+
+  doc.setFontSize(18);
+  doc.text('Payment Confirmation Receipt', 14, 20);
+  doc.setFontSize(11);
+
+  rows.forEach(([label, value], index) => {
+    const y = 34 + (index * 10);
+    doc.text(`${label}:`, 14, y);
+    doc.text(String(value), 70, y);
+  });
+
+  const fileName = `payment-receipt-${receipt.receiptId || Date.now()}.pdf`;
+  doc.save(fileName);
+};
+
+const buildReceiptFromPayment = (payment = {}, property = {}) => ({
+  receiptId: payment.id || payment._id || `${property._id || 'receipt'}-${payment.month || 'month'}`,
+  status: payment.status || 'Complete',
+  completedAt: payment.completedAt || payment.updatedAt || payment.createdAt || new Date().toISOString(),
+  provider: payment.provider || 'N/A',
+  month: payment.month || property.rentalMonth || new Date().toISOString().slice(0, 7),
+  amount: payment.amount || property.monthlyRentPerSeat || 0,
+  transactionId: payment.transactionId || payment.mobileAccountNo || 'N/A',
+});
 
 const DashboardPage = () => {
   const { token, isLoading: isAuthContextLoading } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [properties, setProperties] = useState([]);
+  const [adminListings, setAdminListings] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [adminUsers, setAdminUsers] = useState([]);
   const [pendingPublications, setPendingPublications] = useState([]);
   const [rentTracker, setRentTracker] = useState([]);
   const [tenantReminders, setTenantReminders] = useState(null);
@@ -20,10 +64,12 @@ const DashboardPage = () => {
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [removeModal, setRemoveModal] = useState({ open: false, propertyId: null, title: '', feedback: '' });
   const [isRemovingProperty, setIsRemovingProperty] = useState(false);
-  const [moderationStatusFilter, setModerationStatusFilter] = useState('All');
+  const [isDeletingOwnListing, setIsDeletingOwnListing] = useState(false);
+  const [adminUserSearch, setAdminUserSearch] = useState('');
+  const [adminUserRoleFilter, setAdminUserRoleFilter] = useState('All');
+  const [isModeratingUser, setIsModeratingUser] = useState(false);
   const [isReviewingApplication, setIsReviewingApplication] = useState(false);
   const [isSubmittingSecurePayment, setIsSubmittingSecurePayment] = useState(false);
-  const [isUploadingPaymentSlip, setIsUploadingPaymentSlip] = useState(false);
   const [securePaymentModal, setSecurePaymentModal] = useState({
     open: false,
     step: 1,
@@ -36,7 +82,6 @@ const DashboardPage = () => {
     mobileAccountNo: '',
     otp: '',
     pin: '',
-    paymentSlipUrl: '',
   });
 
   const loadDashboardData = async () => {
@@ -56,16 +101,19 @@ const DashboardPage = () => {
       setProfile(user);
 
       if (user.role === 'Admin') {
-        const [usersResponse, publicationResponse, insightsResponse, allListingsResponse] = await Promise.all([
+        const [usersResponse, publicationResponse, insightsResponse, allListingsResponse, allUsersResponse] = await Promise.all([
           apiClient.get('/auth/admin/pending-verifications'),
           apiClient.get('/properties/admin/pending-publications'),
           apiClient.get('/properties/admin/insights'),
           apiClient.get('/properties/mine'),
+          apiClient.get('/auth/admin/users'),
         ]);
         setPendingUsers(usersResponse.data.users || []);
         setPendingPublications(publicationResponse.data.properties || []);
         setAdminInsights(insightsResponse.data.insights || null);
-        setProperties(allListingsResponse.data.properties || []);
+        setAdminUsers(allUsersResponse.data.users || []);
+        setProperties([]);
+        setAdminListings((allListingsResponse.data.properties || []).filter((item) => item.isActive !== false));
         setTenantReminders(null);
         setLandlordIntelligence([]);
       } else if (user.role === 'Landlord') {
@@ -78,20 +126,24 @@ const DashboardPage = () => {
         setRentTracker(trackerResponse.data.tracker || []);
         setLandlordIntelligence(intelligenceResponse.data.intelligence || []);
         setPendingUsers([]);
+        setAdminUsers([]);
         setPendingPublications([]);
         setAdminInsights(null);
+        setAdminListings([]);
         setTenantReminders(null);
       } else {
         const [listingsResponse, remindersResponse] = await Promise.all([
           apiClient.get('/properties', { params: { limit: 100 } }),
-          apiClient.get('/properties/tenant/reminders', { params: { month: currentMonth } }),
+          apiClient.get('/properties/tenant/reminders'),
         ]);
         setProperties(listingsResponse.data.properties || []);
         setTenantReminders(remindersResponse.data.reminderEngine || null);
         setRentTracker([]);
         setPendingUsers([]);
+        setAdminUsers([]);
         setPendingPublications([]);
         setAdminInsights(null);
+        setAdminListings([]);
         setLandlordIntelligence([]);
       }
     } catch (error) {
@@ -113,6 +165,14 @@ const DashboardPage = () => {
     )
   ), [properties, profile?.id]);
 
+  const approvedTenantBookings = useMemo(() => (
+    properties.flatMap((property) =>
+      (property.seatApplications || [])
+        .filter((application) => String(application.tenant?._id || application.tenant) === String(profile?.id) && application.status === 'Approved')
+        .map((application) => ({ property, application }))
+    )
+  ), [profile?.id, properties]);
+
   const monthlyRentDue = useMemo(() => (
     myTenantApplications
       .filter(({ application }) => application.status === 'Approved')
@@ -125,72 +185,49 @@ const DashboardPage = () => {
 
   const pendingPaymentCount = useMemo(() => {
     if (!profile?.id) return 0;
-    const currentMonth = new Date().toISOString().slice(0, 7);
 
-    return properties.reduce((count, property) => {
-      const hasPending = (property.rentPayments || []).some(
-        (payment) => String(payment.tenant?._id || payment.tenant) === String(profile.id)
-          && payment.month === currentMonth
-          && payment.status !== 'Paid'
+    return approvedTenantBookings.reduce((count, { property }) => {
+      const dueMonth = property.rentalMonth || currentMonth;
+      const payment = (property.rentPayments || []).find(
+        (item) => String(item.tenant?._id || item.tenant) === String(profile.id) && item.month === dueMonth
       );
 
-      return count + (hasPending ? 1 : 0);
+      return count + ((!payment || !isPaymentCompleted(payment.status)) ? 1 : 0);
     }, 0);
-  }, [profile?.id, properties]);
-
-  const approvedTenantBookings = useMemo(() => (
-    properties.flatMap((property) =>
-      (property.seatApplications || [])
-        .filter((application) => String(application.tenant?._id || application.tenant) === String(profile?.id) && application.status === 'Approved')
-        .map((application) => ({ property, application }))
-    )
-  ), [profile?.id, properties]);
+  }, [approvedTenantBookings, currentMonth, profile?.id]);
 
   const tenantMonthPaymentRows = useMemo(() => (
     approvedTenantBookings.map(({ property, application }) => {
+      const dueMonth = property.rentalMonth || currentMonth;
       const payment = (property.rentPayments || []).find(
-        (item) => String(item.tenant?._id || item.tenant) === String(profile?.id)
+        (item) => String(item.tenant?._id || item.tenant) === String(profile?.id) && item.month === dueMonth
       );
 
       return {
         property,
         application,
         payment,
+        dueMonth,
       };
     })
-  ), [approvedTenantBookings, profile?.id]);
+  ), [approvedTenantBookings, currentMonth, profile?.id]);
 
   const unpaidCurrentMonthCount = useMemo(() => {
     if (!profile?.id) return 0;
 
     return approvedTenantBookings.reduce((count, { property }) => {
+      const dueMonth = property.rentalMonth || currentMonth;
       const payment = (property.rentPayments || []).find(
-        (item) => String(item.tenant?._id || item.tenant) === String(profile.id) && item.month === currentMonth
+        (item) => String(item.tenant?._id || item.tenant) === String(profile.id) && item.month === dueMonth
       );
 
-      return count + ((!payment || payment.status !== 'Paid') ? 1 : 0);
+      return count + ((!payment || !isPaymentCompleted(payment.status)) ? 1 : 0);
     }, 0);
   }, [approvedTenantBookings, currentMonth, profile?.id]);
 
   const unpaidCurrentMonthRows = useMemo(() => (
-    tenantMonthPaymentRows.filter(({ property, payment }) => {
-      const paymentMonth = payment?.month || property.rentalMonth || currentMonth;
-      const isCurrentMonth = paymentMonth === currentMonth || paymentMonth === property.rentalMonth;
-      return isCurrentMonth && (!payment || payment.status !== 'Paid');
-    })
-  ), [tenantMonthPaymentRows, currentMonth]);
-
-  const filteredModerationListings = useMemo(() => {
-    if (moderationStatusFilter === 'All') {
-      return properties;
-    }
-
-    if (moderationStatusFilter === 'Active') {
-      return properties.filter((property) => property.isActive !== false);
-    }
-
-    return properties.filter((property) => String(property.publicationStatus || 'Pending') === moderationStatusFilter);
-  }, [properties, moderationStatusFilter]);
+    tenantMonthPaymentRows.filter(({ payment }) => !payment || !isPaymentCompleted(payment.status))
+  ), [tenantMonthPaymentRows]);
 
   const landlordPendingApplications = useMemo(() => (
     properties.flatMap((property) =>
@@ -234,6 +271,71 @@ const DashboardPage = () => {
       await loadDashboardData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to update publication status.');
+    }
+  };
+
+  const adminFilteredUsers = useMemo(() => {
+    const term = adminUserSearch.trim().toLowerCase();
+
+    return (adminUsers || []).filter((adminUser) => {
+      const roleMatch = adminUserRoleFilter === 'All' || adminUser.role === adminUserRoleFilter;
+      const searchMatch = !term || [
+        adminUser.fullName,
+        adminUser.username,
+        adminUser.email,
+        adminUser.phoneNumber,
+      ]
+        .filter(Boolean)
+        .some((item) => String(item).toLowerCase().includes(term));
+
+      return roleMatch && searchMatch;
+    });
+  }, [adminUserRoleFilter, adminUserSearch, adminUsers]);
+
+  const toggleAdminUserBan = async (adminUser) => {
+    const nextBannedState = !adminUser?.isBanned;
+    const confirmText = nextBannedState
+      ? `Ban user "${adminUser?.fullName || adminUser?.username || adminUser?.email}"?`
+      : `Unban user "${adminUser?.fullName || adminUser?.username || adminUser?.email}"?`;
+
+    const shouldProceed = window.confirm(confirmText);
+    if (!shouldProceed) return;
+
+    let reason = '';
+    if (nextBannedState) {
+      reason = window.prompt('Optional reason for ban:')?.trim() || 'Banned by system admin.';
+    }
+
+    try {
+      setIsModeratingUser(true);
+      const response = await apiClient.patch(`/auth/admin/users/${adminUser._id}/ban`, {
+        banned: nextBannedState,
+        reason,
+      });
+      toast.success(response.data?.message || (nextBannedState ? 'User banned.' : 'User unbanned.'));
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to update user ban status.');
+    } finally {
+      setIsModeratingUser(false);
+    }
+  };
+
+  const deleteAdminUserAccount = async (adminUser) => {
+    const shouldProceed = window.confirm(
+      `Delete user "${adminUser?.fullName || adminUser?.username || adminUser?.email}" account permanently? This cannot be undone.`
+    );
+    if (!shouldProceed) return;
+
+    try {
+      setIsModeratingUser(true);
+      const response = await apiClient.delete(`/auth/admin/users/${adminUser._id}`);
+      toast.success(response.data?.message || 'User deleted successfully.');
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to delete user account.');
+    } finally {
+      setIsModeratingUser(false);
     }
   };
 
@@ -288,6 +390,45 @@ const DashboardPage = () => {
     }
   };
 
+  const editOwnListing = (propertyId) => {
+    navigate(`/properties/${propertyId}/edit`);
+  };
+
+  const deleteOwnListing = async (propertyId, title) => {
+    const shouldProceed = window.confirm(`Delete listing "${title}"? This action cannot be undone.`);
+    if (!shouldProceed) return;
+
+    try {
+      setIsDeletingOwnListing(true);
+      const response = await apiClient.delete(`/properties/${propertyId}`);
+      toast.success(response.data?.message || 'Listing deleted successfully.');
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to delete listing.');
+    } finally {
+      setIsDeletingOwnListing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (profile?.role !== 'Landlord') {
+      return undefined;
+    }
+
+    const socket = getSocket();
+    const handleNewSeatApplication = (payload = {}) => {
+      const title = payload.propertyTitle ? ` for ${payload.propertyTitle}` : '';
+      toast.info(`New seat request received${title}.`);
+      loadDashboardData();
+    };
+
+    socket.on('seat:application:new', handleNewSeatApplication);
+
+    return () => {
+      socket.off('seat:application:new', handleNewSeatApplication);
+    };
+  }, [profile?.role]);
+
   const openSecurePaymentModal = (property, application) => {
     const seats = Number(application?.seatsRequested || 1);
     const totalAmount = Number(property?.monthlyRentPerSeat || 0) * seats;
@@ -304,7 +445,6 @@ const DashboardPage = () => {
       mobileAccountNo: '',
       otp: '',
       pin: '',
-      paymentSlipUrl: '',
     });
   };
 
@@ -315,34 +455,6 @@ const DashboardPage = () => {
 
   const updateSecurePaymentField = (field, value) => {
     setSecurePaymentModal((previous) => ({ ...previous, [field]: value }));
-  };
-
-  const uploadPaymentSlipFile = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('photos', file);
-
-    try {
-      setIsUploadingPaymentSlip(true);
-      const response = await apiClient.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      const url = response.data?.urls?.[0];
-      if (!url) {
-        throw new Error('Upload did not return a slip URL.');
-      }
-
-      updateSecurePaymentField('paymentSlipUrl', url);
-      toast.success('Payment slip uploaded successfully.');
-    } catch (error) {
-      toast.error(error.response?.data?.message || error.message || 'Unable to upload payment slip.');
-    } finally {
-      setIsUploadingPaymentSlip(false);
-      event.target.value = '';
-    }
   };
 
   const proceedSecurePaymentStep = () => {
@@ -367,7 +479,7 @@ const DashboardPage = () => {
       }
     }
 
-    setSecurePaymentModal((previous) => ({ ...previous, step: Math.min(previous.step + 1, 4) }));
+    setSecurePaymentModal((previous) => ({ ...previous, step: Math.min(previous.step + 1, 3) }));
   };
 
   const submitSecurePaymentFromDashboard = async () => {
@@ -379,11 +491,11 @@ const DashboardPage = () => {
         mobileAccountNo: securePaymentModal.mobileAccountNo,
         otp: securePaymentModal.otp,
         pin: securePaymentModal.pin,
-        paymentSlipUrl: securePaymentModal.paymentSlipUrl,
         amount: securePaymentModal.amount,
       });
 
       toast.success(response.data.message || 'Secure payment submitted successfully.');
+      generatePaymentReceiptPdf(response.data?.paymentReceipt || {});
       closeSecurePaymentModal();
       await loadDashboardData();
     } catch (error) {
@@ -400,6 +512,21 @@ const DashboardPage = () => {
       await loadDashboardData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to update payment status.');
+    }
+  };
+
+  const setMonthlyRentNotice = async (propertyId) => {
+    if (!trackerMonth) {
+      toast.error('Select a month before notifying tenants.');
+      return;
+    }
+
+    try {
+      const response = await apiClient.patch(`/properties/${propertyId}`, { rentalMonth: trackerMonth });
+      toast.success(response.data.message || `Rent month set to ${trackerMonth}. Tenants are now notified in reminders.`);
+      await loadDashboardData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to set rental month.');
     }
   };
 
@@ -493,32 +620,6 @@ const DashboardPage = () => {
             </article>
 
             <article style={panelStyle}>
-              <h2 style={panelTitleStyle}>Listing moderation</h2>
-              <label style={fieldStyle}>
-                <span>Filter listings</span>
-                <select value={moderationStatusFilter} onChange={(event) => setModerationStatusFilter(event.target.value)} style={inputStyle}>
-                  <option value="All">All</option>
-                  <option value="Active">Active</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Rejected">Rejected</option>
-                  <option value="Approved">Approved</option>
-                </select>
-              </label>
-              {filteredModerationListings.length > 0 ? filteredModerationListings.map((property) => (
-                <div key={`moderation-${property._id}`} style={listItemStyle}>
-                  <div>
-                    <strong>{property.title}</strong>
-                    <p style={smallTextStyle}>{property.area} · {property.landlordName || property.landlord?.fullName || 'Landlord'}</p>
-                    <p style={smallTextStyle}>Status: {property.publicationStatus || 'Pending'} · {property.isActive === false ? 'Inactive' : 'Active'}</p>
-                  </div>
-                  <div style={actionRowStyle}>
-                    <button type="button" onClick={() => openAdminRemoveModal(property)} style={rejectButtonStyle}>Remove with feedback</button>
-                  </div>
-                </div>
-              )) : <p style={mutedTextStyle}>No listings found for the selected filter.</p>}
-            </article>
-
-            <article style={panelStyle}>
               <h2 style={panelTitleStyle}>Smart admin insights</h2>
               {adminInsights ? (
                 <>
@@ -534,6 +635,76 @@ const DashboardPage = () => {
                   ) : null}
                 </>
               ) : <p style={mutedTextStyle}>No insights available yet.</p>}
+            </article>
+
+            <article style={panelStyle}>
+              <h2 style={panelTitleStyle}>User account management</h2>
+              <div style={{ ...fieldStyle, marginBottom: '12px' }}>
+                <span>Search users</span>
+                <input
+                  type="text"
+                  value={adminUserSearch}
+                  onChange={(event) => setAdminUserSearch(event.target.value)}
+                  style={inputStyle}
+                  placeholder="Name, username, email, phone"
+                />
+              </div>
+              <div style={{ ...fieldStyle, marginBottom: '12px' }}>
+                <span>Role filter</span>
+                <select value={adminUserRoleFilter} onChange={(event) => setAdminUserRoleFilter(event.target.value)} style={inputStyle}>
+                  <option value="All">All roles</option>
+                  <option value="Tenant">Tenant</option>
+                  <option value="Landlord">Landlord</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+
+              {adminFilteredUsers.length > 0 ? adminFilteredUsers.slice(0, 60).map((adminUser) => (
+                <div key={`admin-user-${adminUser._id}`} style={listItemStyle}>
+                  <div>
+                    <strong>{adminUser.fullName || adminUser.username || adminUser.email}</strong>
+                    <p style={smallTextStyle}>{adminUser.role} · {adminUser.email || 'No email'} · {adminUser.phoneNumber || 'No phone'}</p>
+                    <p style={smallTextStyle}>
+                      Verification: {adminUser.verificationStatus || (adminUser.isVerified ? 'Verified' : 'Pending')} ·
+                      {' '}Status: {adminUser.isBanned ? 'Banned' : 'Active'}
+                    </p>
+                  </div>
+                  <div style={actionRowStyle}>
+                    <button
+                      type="button"
+                      onClick={() => toggleAdminUserBan(adminUser)}
+                      style={adminUser.isBanned ? approveButtonStyle : rejectButtonStyle}
+                      disabled={isModeratingUser}
+                    >
+                      {adminUser.isBanned ? 'Unban' : 'Ban'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteAdminUserAccount(adminUser)}
+                      style={rejectButtonStyle}
+                      disabled={isModeratingUser}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )) : <p style={mutedTextStyle}>No users found for current filters.</p>}
+            </article>
+
+            <article style={panelStyle}>
+              <h2 style={panelTitleStyle}>Active landlord listings</h2>
+              {adminListings.length > 0 ? adminListings.slice(0, 20).map((property) => (
+                <div key={`admin-active-${property._id}`} style={listItemStyle}>
+                  <div>
+                    <strong>{property.title}</strong>
+                    <p style={smallTextStyle}>{property.area} · {property.landlordName || property.landlord?.fullName || 'Landlord'}</p>
+                    <p style={smallTextStyle}>Status: {property.publicationStatus || 'Pending'} · {property.isActive === false ? 'Inactive' : 'Active'}</p>
+                  </div>
+                  <div style={actionRowStyle}>
+                    <button type="button" onClick={() => openAdminRemoveModal(property)} style={rejectButtonStyle}>Remove</button>
+                  </div>
+                </div>
+              )) : <p style={mutedTextStyle}>No active landlord listings found.</p>}
             </article>
           </section>
         </>
@@ -566,6 +737,17 @@ const DashboardPage = () => {
                     </p>
                   );
                 })()}
+                <div style={actionRowStyle}>
+                  <button type="button" onClick={() => editOwnListing(property._id)} style={ghostButtonStyle}>Edit listing</button>
+                  <button
+                    type="button"
+                    onClick={() => deleteOwnListing(property._id, property.title)}
+                    style={rejectButtonStyle}
+                    disabled={isDeletingOwnListing}
+                  >
+                    {isDeletingOwnListing ? 'Removing...' : 'Remove listing'}
+                  </button>
+                </div>
               </div>
             )) : <p style={mutedTextStyle}>No seats yet. Use Add Property to submit your host seat listing.</p>}
             <Link to="/add-property" style={ctaLinkStyle}>Add new seat</Link>
@@ -599,7 +781,8 @@ const DashboardPage = () => {
                 <strong>{entry.title}</strong>
                 <p style={smallTextStyle}>{entry.area}</p>
                 {entry.rentalMonth ? <p style={smallTextStyle}>Rental month: {entry.rentalMonth}</p> : null}
-                <p style={smallTextStyle}>Paid: {(entry.tenants || []).filter((tenant) => tenant.payment?.status === 'Paid').length} · Unpaid: {(entry.tenants || []).filter((tenant) => !tenant.payment || tenant.payment.status !== 'Paid').length}</p>
+                <button type="button" onClick={() => setMonthlyRentNotice(entry.propertyId)} style={ctaButtonStyle}>Set {trackerMonth} and notify tenants</button>
+                <p style={smallTextStyle}>Paid: {(entry.tenants || []).filter((tenant) => isPaymentCompleted(tenant.payment?.status)).length} · Unpaid: {(entry.tenants || []).filter((tenant) => !tenant.payment || !isPaymentCompleted(tenant.payment.status)).length}</p>
                 {entry.rentalRisk ? (
                   <p style={entry.rentalRisk.level === 'High' ? overdueTextStyle : smallTextStyle}>
                     Risk: {entry.rentalRisk.level} ({entry.rentalRisk.score}%)
@@ -609,7 +792,7 @@ const DashboardPage = () => {
                   (entry.tenants || [])
                     .slice()
                     .sort((left, right) => {
-                      const rank = (tenant) => (tenant.payment?.status === 'Paid' ? 2 : tenant.payment?.status === 'Rejected' ? 1 : 0);
+                      const rank = (tenant) => (isPaymentCompleted(tenant.payment?.status) ? 2 : tenant.payment?.status === 'Rejected' ? 1 : 0);
                       return rank(left) - rank(right);
                     })
                     .map((tenant) => (
@@ -617,11 +800,11 @@ const DashboardPage = () => {
                         <div>
                           <strong>{tenant.tenantName}</strong>
                           <p style={smallTextStyle}>{tenant.seatsBooked} seat(s) · {entry.month}</p>
-                          <p style={tenant.payment?.status === 'Paid' ? smallTextStyle : overdueTextStyle}>Status: {tenant.payment?.status || 'Unpaid'}</p>
+                          <p style={isPaymentCompleted(tenant.payment?.status) ? smallTextStyle : overdueTextStyle}>Status: {tenant.payment?.status || 'Unpaid'}</p>
                         </div>
                         {tenant.payment ? (
                           <div style={actionRowStyle}>
-                            <button type="button" onClick={() => updateTrackedPaymentStatus(entry.propertyId, tenant.payment.id, 'Paid')} style={approveButtonStyle}>Mark paid</button>
+                            <button type="button" onClick={() => updateTrackedPaymentStatus(entry.propertyId, tenant.payment.id, 'Complete')} style={approveButtonStyle}>Mark complete</button>
                             <button type="button" onClick={() => updateTrackedPaymentStatus(entry.propertyId, tenant.payment.id, 'Rejected')} style={rejectButtonStyle}>Reject</button>
                           </div>
                         ) : (
@@ -692,8 +875,8 @@ const DashboardPage = () => {
             {new Date().getDate() <= 5 && unpaidCurrentMonthCount > 0 && (
               <p style={alertTextStyle}>Monthly reminder: You have {unpaidCurrentMonthCount} unpaid rent item(s) for this month.</p>
             )}
-            <p style={smallTextStyle}>SSL secure flow: payment method -&gt; mobile account -&gt; OTP -&gt; PIN -&gt; payment slip with QR authentication.</p>
-            {tenantMonthPaymentRows.length > 0 ? tenantMonthPaymentRows.map(({ property, application, payment }) => {
+            <p style={smallTextStyle}>SSL secure flow: payment method -&gt; mobile account -&gt; OTP -&gt; PIN -&gt; payment completed.</p>
+            {tenantMonthPaymentRows.length > 0 ? tenantMonthPaymentRows.map(({ property, application, payment, dueMonth }) => {
               const seats = Number(application.seatsRequested || 1);
               const totalAmount = Number(property.monthlyRentPerSeat || 0) * seats;
 
@@ -701,10 +884,11 @@ const DashboardPage = () => {
                 <div key={`${property._id}-${application._id}`} style={listBlockStyle}>
                   <strong>{property.title}</strong>
                   <p style={smallTextStyle}>{seats} seat(s) · Total ৳{totalAmount}</p>
-                  <p style={smallTextStyle}>Rental month: {property.rentalMonth || currentMonth}</p>
+                  <p style={smallTextStyle}>Rental month: {dueMonth}</p>
                   <p style={smallTextStyle}>Payment status: {payment?.status || 'Not submitted'}</p>
                   {payment ? (
                     <>
+                      {isPaymentCompleted(payment.status) ? <button type="button" onClick={() => generatePaymentReceiptPdf(buildReceiptFromPayment(payment, property))} style={ctaButtonStyle}>Download PDF receipt</button> : null}
                       {payment.paymentSlipUrl ? <a href={payment.paymentSlipUrl} target="_blank" rel="noreferrer" style={assetLinkStyle}>View payment slip</a> : null}
                       {payment.paymentSlipQr ? <p style={smallTextStyle}>QR Auth: {payment.paymentSlipQr}</p> : null}
                     </>
@@ -725,7 +909,7 @@ const DashboardPage = () => {
                     <strong>{reminder.title}</strong>
                     <p style={smallTextStyle}>{reminder.message}</p>
                   </div>
-                  <span style={badgeStyle(reminder.status === 'Paid' ? 'Approved' : 'Pending')}>৳{reminder.amount}</span>
+                  <span style={badgeStyle(isPaymentCompleted(reminder.status) ? 'Approved' : 'Pending')}>৳{reminder.amount}</span>
                 </div>
               ))
             ) : <p style={mutedTextStyle}>No reminder items for this month.</p>}
@@ -738,7 +922,7 @@ const DashboardPage = () => {
           <div style={modalCardStyle}>
             <h3 style={{ margin: 0 }}>Secure seat payment</h3>
             <p style={smallTextStyle}>{securePaymentModal.title} · ৳{securePaymentModal.amount}</p>
-            <p style={smallTextStyle}>SSL step {securePaymentModal.step} of 4</p>
+            <p style={smallTextStyle}>SSL step {securePaymentModal.step} of 3</p>
 
             {securePaymentModal.step === 1 && (
               <>
@@ -777,17 +961,6 @@ const DashboardPage = () => {
               </label>
             )}
 
-            {securePaymentModal.step === 4 && (
-              <>
-                <label style={fieldStyle}>
-                  <span>Upload payment slip (with QR visible)</span>
-                  <input type="file" accept="image/*" onChange={uploadPaymentSlipFile} style={inputStyle} disabled={isUploadingPaymentSlip} />
-                </label>
-                <p style={smallTextStyle}>{isUploadingPaymentSlip ? 'Uploading slip...' : securePaymentModal.paymentSlipUrl ? 'Slip uploaded and ready for secure payment.' : 'Upload the slip image to continue.'}</p>
-                {securePaymentModal.paymentSlipUrl ? <a href={securePaymentModal.paymentSlipUrl} target="_blank" rel="noreferrer" style={assetLinkStyle}>Preview uploaded payment slip</a> : null}
-              </>
-            )}
-
             <div style={actionRowStyle}>
               <button type="button" onClick={closeSecurePaymentModal} style={ghostButtonStyle} disabled={isSubmittingSecurePayment}>Cancel</button>
               {securePaymentModal.step > 1 && (
@@ -800,14 +973,14 @@ const DashboardPage = () => {
                   Back
                 </button>
               )}
-              {securePaymentModal.step < 4 ? (
+              {securePaymentModal.step < 3 ? (
                 <button type="button" onClick={proceedSecurePaymentStep} style={ctaButtonStyle} disabled={isSubmittingSecurePayment}>Proceed</button>
               ) : (
                 <button
                   type="button"
                   onClick={submitSecurePaymentFromDashboard}
                   style={approveButtonStyle}
-                  disabled={isSubmittingSecurePayment || isUploadingPaymentSlip || !securePaymentModal.paymentSlipUrl}
+                  disabled={isSubmittingSecurePayment}
                 >
                   Complete payment
                 </button>
@@ -863,8 +1036,8 @@ const assetLinkRowStyle = { display: 'flex', gap: '8px', marginTop: '8px', flexW
 const assetLinkStyle = { color: '#ffd166', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem' };
 const mutedTextStyle = { color: 'rgba(255,255,255,0.66)' };
 const actionRowStyle = { display: 'flex', gap: '8px', flexWrap: 'wrap' };
-const fieldStyle = { display: 'grid', gap: '8px', marginTop: '10px', color: 'rgba(255,255,255,0.82)' };
-const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(8,12,18,0.78)', color: '#fff' };
+const fieldStyle = { display: 'grid', gap: '8px', color: 'rgba(255,255,255,0.82)' };
+const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(8,12,18,0.78)', color: '#fff' };
 const listBlockStyle = { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' };
 const alertTextStyle = { marginTop: '10px', padding: '10px 12px', borderRadius: '12px', background: 'rgba(255, 209, 102, 0.12)', color: '#ffd166', border: '1px solid rgba(255, 209, 102, 0.35)' };
 const ctaButtonStyle = { marginTop: '12px', border: '0', padding: '10px 12px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffd166 0%, #f08a5d 100%)', color: '#09111b', fontWeight: 700 };

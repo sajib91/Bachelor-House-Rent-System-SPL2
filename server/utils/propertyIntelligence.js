@@ -223,7 +223,7 @@ const computeRentalRisk = (entry = {}, overrides = null) => {
 };
 
 const getTenantReminderSummary = (records = []) => {
-    const overdue = records.filter((row) => row.status !== 'Paid');
+    const overdue = records.filter((row) => !['Paid', 'Complete'].includes(String(row.status || '')));
     const totalDue = overdue.reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
     return {
